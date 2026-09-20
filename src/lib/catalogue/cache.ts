@@ -248,6 +248,46 @@ export async function searchCatalogue(
   const cached = readSearchCache(key);
   if (cached) return cached.map(toCatalogueItem);
 
+  const client = options.client ?? kruoka;
+
+  try {
+    const live = await client.searchProducts(query.trim(), {
+      storeId: options.storeId,
+      limit,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+
+    const usable = live.filter((product) => product.isAvailable);
+    if (usable.length > 0) {
+      writeSearchCache(key, usable);
+      // Caching must never break the search itself.
+      await persist(usable, options.storeId).catch((error) => {
+        console.error("catalogue cache write failed:", error);
+      });
+      return usable.map(toCatalogueItem);
+    }
+  } catch (error) {
+    // Offline, rate-limited, or the upstream changed under us. The local
+    // index still has names, pictures and the last prices we saw — degraded,
+    // but usable, which is what matters when someone is in a shop.
+    console.error("live product search failed, falling back to the index:", error);
+  }
+
+  return searchLocalIndex(trimmed, options.storeId, limit, options.signal);
+}
+
+/**
+ * Searches the locally cached catalogue.
+ *
+ * The fallback when upstream cannot be reached, and the reason the app still
+ * works with no connection.
+ */
+async function searchLocalIndex(
+  trimmed: string,
+  storeId: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<CatalogueItem[]> {
   const pattern = `%${trimmed.replace(/[%_]/g, "")}%`;
   const prefix = `${trimmed.replace(/[%_]/g, "")}%`;
 
@@ -265,7 +305,7 @@ export async function searchCatalogue(
   const prices = await db
     .select()
     .from(storePrices)
-    .where(and(inArray(storePrices.ean, eans), eq(storePrices.storeId, options.storeId)));
+    .where(and(inArray(storePrices.ean, eans), eq(storePrices.storeId, storeId)));
 
   const priceByEan = new Map(prices.map((row) => [row.ean, row]));
   const now = Date.now();
@@ -285,11 +325,11 @@ export async function searchCatalogue(
     if (row.slug) {
       try {
         const product = await fetchProductBySlug(row.slug, {
-          storeId: options.storeId,
-          ...(options.signal ? { signal: options.signal } : {}),
+          storeId,
+          ...(signal ? { signal } : {}),
         });
         if (product) {
-          await persist([product], options.storeId).catch(() => undefined);
+          await persist([product], storeId).catch(() => undefined);
           items.push(toCatalogueItem(product));
           continue;
         }

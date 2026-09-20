@@ -18,10 +18,36 @@ vi.mock("@/lib/db", () => ({
 }));
 
 const { clearSearchCache, getPrices, searchCatalogue } = await import("@/lib/catalogue/cache");
+const { KRuokaClient } = await import("@/lib/kruoka/client");
+const fixture = (await import("../fixtures/kruoka-search.json")).default;
 const { products, storePrices } = await import("@/lib/db/schema");
 const { foldFinnish } = await import("@/lib/text");
 
 const realFetch = globalThis.fetch;
+
+/**
+ * A client whose transport is a stub, so no test ever reaches the network.
+ * `live: false` simulates upstream being unavailable, which is how the
+ * local-index fallback gets exercised.
+ */
+function stubClient(options: { live?: boolean } = {}) {
+  let calls = 0;
+  const transport = async () => {
+    calls += 1;
+    if (options.live === false) throw new Error("upstream unavailable");
+    return { status: 200, body: JSON.stringify(fixture) };
+  };
+  const client = new KRuokaClient({
+    transport,
+    minIntervalMs: 0,
+    buildNumber: "00000",
+    storeId: "N106",
+  });
+  return { client, calls: () => calls };
+}
+
+/** Upstream down, so behaviour falls through to the local index. */
+const offline = () => stubClient({ live: false }).client;
 
 /** A product page, as the site publishes it: schema.org JSON-LD. */
 function productPage(ean: string, name: string, price: number, unitCode = "ct"): string {
@@ -117,7 +143,7 @@ describe("searchCatalogue", () => {
     await seedProduct("6410405082657", "Pirkka suomalainen kevytmaito 1l", { priceCents: 99 });
     const calls = stubNetwork();
 
-    const items = await searchCatalogue("kevytmaito", { storeId: "N106" });
+    const items = await searchCatalogue("kevytmaito", { storeId: "N106", client: offline() });
 
     expect(items).toHaveLength(1);
     expect(items[0]?.name).toBe("Pirkka suomalainen kevytmaito 1l");
@@ -130,15 +156,15 @@ describe("searchCatalogue", () => {
     await seedProduct("1", "Fazer Ruisleipä 500g", { priceCents: 199 });
     stubNetwork();
 
-    expect(await searchCatalogue("leipa", { storeId: "N106" })).toHaveLength(1);
-    expect(await searchCatalogue("LEIPÄ", { storeId: "N106" })).toHaveLength(1);
+    expect(await searchCatalogue("leipa", { storeId: "N106", client: offline() })).toHaveLength(1);
+    expect(await searchCatalogue("LEIPÄ", { storeId: "N106", client: offline() })).toHaveLength(1);
   });
 
   it("ignores a query shorter than two characters", async () => {
     await seedProduct("1", "Maito", { priceCents: 99 });
     const calls = stubNetwork();
 
-    expect(await searchCatalogue("m", { storeId: "N106" })).toEqual([]);
+    expect(await searchCatalogue("m", { storeId: "N106", client: offline() })).toEqual([]);
     expect(calls()).toBe(0);
   });
 
@@ -147,7 +173,7 @@ describe("searchCatalogue", () => {
     await seedProduct("2", "Maito 1l", { priceCents: 95 });
     stubNetwork();
 
-    const items = await searchCatalogue("maito", { storeId: "N106" });
+    const items = await searchCatalogue("maito", { storeId: "N106", client: offline() });
 
     expect(items[0]?.name).toBe("Maito 1l");
   });
@@ -158,14 +184,16 @@ describe("searchCatalogue", () => {
     }
     stubNetwork();
 
-    expect(await searchCatalogue("maito", { storeId: "N106", limit: 3 })).toHaveLength(3);
+    expect(
+      await searchCatalogue("maito", { storeId: "N106", limit: 3, client: offline() }),
+    ).toHaveLength(3);
   });
 
   it("returns nothing when the index has no match", async () => {
     await seedProduct("1", "Maito", { priceCents: 99 });
     stubNetwork();
 
-    expect(await searchCatalogue("banaani", { storeId: "N106" })).toEqual([]);
+    expect(await searchCatalogue("banaani", { storeId: "N106", client: offline() })).toEqual([]);
   });
 
   it("fetches a price from the product page when none is cached", async () => {
@@ -175,7 +203,7 @@ describe("searchCatalogue", () => {
         new Response(productPage("6410405082657", "Pirkka kevytmaito 1l", 0.99), { status: 200 }),
     );
 
-    const items = await searchCatalogue("kevytmaito", { storeId: "N106" });
+    const items = await searchCatalogue("kevytmaito", { storeId: "N106", client: offline() });
 
     expect(calls()).toBe(1);
     expect(items[0]?.bestUnitCents).toBe(99);
@@ -190,7 +218,7 @@ describe("searchCatalogue", () => {
     await seedProduct("1", "Maito", { priceCents: 99, ageDays: 30 });
     stubNetwork();
 
-    const items = await searchCatalogue("maito", { storeId: "N106" });
+    const items = await searchCatalogue("maito", { storeId: "N106", client: offline() });
 
     expect(items).toHaveLength(1);
     expect(items[0]?.bestUnitCents).toBe(99);
@@ -200,19 +228,58 @@ describe("searchCatalogue", () => {
     await seedProduct("1", "Maito");
     stubNetwork();
 
-    expect(await searchCatalogue("maito", { storeId: "N106" })).toEqual([]);
+    expect(await searchCatalogue("maito", { storeId: "N106", client: offline() })).toEqual([]);
   });
 
   it("serves a repeated query from memory", async () => {
     await seedProduct("1", "Maito", { priceCents: 99 });
     stubNetwork();
 
-    await searchCatalogue("maito", { storeId: "N106" });
-    await searchCatalogue("MAITO", { storeId: "N106" });
+    await searchCatalogue("maito", { storeId: "N106", client: offline() });
+    await searchCatalogue("MAITO", { storeId: "N106", client: offline() });
 
     // Nothing to assert on the network here; the point is it does not throw
     // and returns the same answer for an equivalent query.
-    expect(await searchCatalogue("maito", { storeId: "N106" })).toHaveLength(1);
+    expect(await searchCatalogue("maito", { storeId: "N106", client: offline() })).toHaveLength(1);
+  });
+});
+
+describe("searchCatalogue, live", () => {
+  it("prefers upstream, which is the only source of campaign prices", async () => {
+    const { client } = stubClient();
+
+    const items = await searchCatalogue("lohi", { storeId: "N106", client });
+
+    const batched = items.find((i) => i.ean === "6410402025602");
+    expect(batched?.bestKind).toBe("batch");
+    expect(batched?.bestUnitCents).toBe(225);
+    expect(batched?.discountType).toBe("PLUSSA");
+  });
+
+  it("writes live results through to the cache", async () => {
+    const { client } = stubClient();
+
+    await searchCatalogue("lohi", { storeId: "N106", client });
+
+    expect((await testDb.select().from(storePrices)).length).toBeGreaterThan(0);
+  });
+
+  // Someone in a shop needs an answer, not an error page.
+  it("falls back to the local index when upstream is unavailable", async () => {
+    await seedProduct("1", "Maito", { priceCents: 99 });
+    const { client } = stubClient({ live: false });
+
+    const items = await searchCatalogue("maito", { storeId: "N106", client });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.bestUnitCents).toBe(99);
+  });
+
+  it("does not call upstream for a query that is too short", async () => {
+    const { client, calls } = stubClient();
+
+    expect(await searchCatalogue("m", { storeId: "N106", client })).toEqual([]);
+    expect(calls()).toBe(0);
   });
 });
 

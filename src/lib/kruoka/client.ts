@@ -1,16 +1,25 @@
+import { getBuildNumber, invalidateBuildNumber } from "./buildNumber";
 import { normalizeSearchResponse } from "./normalize";
+import { request, type TransportRequest, type TransportResponse } from "./transport";
 import type { Product } from "./types";
 
 /**
- * Client for K-Ruoka's internal storefront API.
+ * Client for K-Ruoka's storefront API.
  *
- * This runs SERVER-SIDE ONLY. The upstream endpoint sends no CORS headers, so a
- * browser cannot call it directly — see AGENTS.md. Everything the client needs
- * goes through our own /api/products routes.
+ * Server-side only. The endpoint sends no CORS headers, so the browser talks
+ * to our own `/api/products/*` routes instead.
  *
- * Treat this file as a liability: the endpoint is undocumented, unversioned and
- * sits behind Cloudflare. It is deliberately isolated so that when it breaks,
- * it breaks here.
+ * Two things are required to get a useful answer, and both were discovered
+ * from the API's own error responses:
+ *
+ * 1. `X-K-Build-Number`, the storefront's current build. Without it the API
+ *    replies 409 "Client version is too old - reload". It is discovered from
+ *    the storefront markup and refreshed when the API says it is stale.
+ * 2. A request made by curl rather than Node's fetch — see `transport.ts`.
+ *
+ * Even so, treat this as a liability: it is undocumented and unversioned, and
+ * it can change without notice. That is why every response goes through
+ * `normalize.ts` before the rest of the app sees it.
  */
 
 const BASE_URL = "https://www.k-ruoka.fi/kr-api";
@@ -36,46 +45,34 @@ export interface SearchOptions {
   signal?: AbortSignal;
 }
 
+/** Injectable for tests; defaults to the curl transport. */
+export type Transport = (url: string, options?: TransportRequest) => Promise<TransportResponse>;
+
 export interface KRuokaClientOptions {
-  /** Injectable for tests. Defaults to global fetch. */
-  fetchImpl?: typeof fetch;
+  transport?: Transport;
   storeId?: string;
   timeoutMs?: number;
-  /** Minimum gap between upstream calls. We are a guest on their infrastructure. */
+  /** Minimum gap between calls. We are a guest on someone else's service. */
   minIntervalMs?: number;
-}
-
-/**
- * Headers that make us look like the storefront SPA rather than a bare script.
- *
- * Observed behaviour: requests without a browser-shaped header set are answered
- * with HTTP 409 even though the identical URL succeeds from the site itself.
- */
-function upstreamHeaders(): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    "Accept-Language": "fi-FI,fi;q=0.9",
-    Origin: "https://www.k-ruoka.fi",
-    Referer: "https://www.k-ruoka.fi/kauppa/tuotehaku",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-  };
+  /** Skips build-number discovery in tests. */
+  buildNumber?: string;
 }
 
 export class KRuokaClient {
-  private readonly fetchImpl: typeof fetch;
+  private readonly transport: Transport;
   private readonly storeId: string;
   private readonly timeoutMs: number;
   private readonly minIntervalMs: number;
+  private readonly fixedBuildNumber: string | undefined;
   private lastCallAt = 0;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: KRuokaClientOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.transport = options.transport ?? request;
     this.storeId = options.storeId ?? process.env.KRUOKA_DEFAULT_STORE ?? DEFAULT_STORE_ID;
-    this.timeoutMs = options.timeoutMs ?? 8000;
+    this.timeoutMs = options.timeoutMs ?? 20_000;
     this.minIntervalMs = options.minIntervalMs ?? 250;
+    this.fixedBuildNumber = options.buildNumber;
   }
 
   /** Serialises calls and spaces them out, so we never burst the upstream. */
@@ -91,31 +88,53 @@ export class KRuokaClient {
     return run;
   }
 
-  private async post(path: string, signal?: AbortSignal): Promise<unknown> {
-    const timeout = AbortSignal.timeout(this.timeoutMs);
-    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  private async buildNumber(): Promise<string> {
+    if (this.fixedBuildNumber) return this.fixedBuildNumber;
+    return getBuildNumber((url) => this.transport(url, { timeoutMs: this.timeoutMs }));
+  }
 
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${BASE_URL}${path}`, {
-        method: "POST",
-        headers: upstreamHeaders(),
-        body: "{}",
-        signal: combined,
-        cache: "no-store",
-      });
-    } catch (cause) {
-      throw new KRuokaError(`upstream unreachable: ${String(cause)}`, null, true);
+  /**
+   * Issues one call, refreshing the build number once if the API reports it is
+   * stale. A deploy happens mid-session sooner or later, and one retry turns
+   * that from an outage into a hiccup.
+   */
+  private async call(path: string, retriedAfterVersionBump = false): Promise<unknown> {
+    const build = await this.buildNumber();
+
+    const response = await this.transport(`${BASE_URL}${path}`, {
+      method: "POST",
+      timeoutMs: this.timeoutMs,
+      body: "{}",
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": "fi-FI,fi;q=0.9",
+        "Content-Type": "application/json",
+        "X-K-Build-Number": build,
+      },
+    });
+
+    if (response.status === 409 && !retriedAfterVersionBump) {
+      const message = safeErrorMessage(response.body);
+      if (message?.includes("Client version is too old")) {
+        invalidateBuildNumber();
+        return this.call(path, true);
+      }
     }
 
-    if (!response.ok) {
-      // 429/5xx are worth retrying; 409 usually means they did not like the
-      // shape of the request, and retrying identically will not help.
+    if (response.status !== 200) {
       const retryable = response.status === 429 || response.status >= 500;
-      throw new KRuokaError(`upstream returned ${response.status}`, response.status, retryable);
+      throw new KRuokaError(
+        `upstream returned ${response.status}: ${safeErrorMessage(response.body) ?? "no detail"}`,
+        response.status,
+        retryable,
+      );
     }
 
-    return response.json();
+    try {
+      return JSON.parse(response.body);
+    } catch {
+      throw new KRuokaError("upstream returned unparseable JSON", response.status, true);
+    }
   }
 
   /** Full-text product search against one store's assortment. */
@@ -132,9 +151,9 @@ export class KRuokaClient {
       discountFilter: "false",
       isTrOffer: "false",
     });
-    const path = `/v2/product-search/${encodeURIComponent(trimmed)}?${params}`;
 
-    const body = await this.throttle(() => this.post(path, options.signal));
+    const path = `/v2/product-search/${encodeURIComponent(trimmed)}?${params}`;
+    const body = await this.throttle(() => this.call(path));
     return normalizeSearchResponse(body, storeId);
   }
 
@@ -149,7 +168,17 @@ export class KRuokaClient {
     const digits = ean.replace(/\D/g, "");
     if (digits.length < 8) return null;
     const results = await this.searchProducts(digits, { ...options, limit: 10 });
-    return results.find((p) => p.ean === digits) ?? null;
+    return results.find((product) => product.ean === digits) ?? null;
+  }
+}
+
+/** Reads the API's error text without letting a malformed body throw. */
+function safeErrorMessage(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } };
+    return parsed.error?.message ?? null;
+  } catch {
+    return null;
   }
 }
 
