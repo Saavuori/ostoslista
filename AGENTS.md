@@ -198,12 +198,18 @@ Target is a single Oracle Cloud VM running rootless Podman behind Caddy.
 The image is built by CI and is plain OCI, so `docker` and `podman` both work.
 
 ```bash
+# Migrations are a deploy step, run from a checkout against the production
+# database. They are deliberately NOT run by the container on start: two
+# replicas starting at once would race, and a failed migration would turn into
+# a crash loop rather than a clear error.
+DATABASE_URL=postgres://... npm run db:migrate
+
 podman pull ghcr.io/saavuori/ostoslista:latest
 systemctl --user restart ostoslista
 ```
 
-Migrations run at container start. Rollback is redeploying the previous tag —
-migrations are written to be additive so a rollback does not strand the schema.
+Rollback is redeploying the previous tag. Migrations are written to be additive
+so a rollback does not strand the schema.
 
 ## Gotchas
 
