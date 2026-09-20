@@ -1,24 +1,21 @@
-node_modules/
-.next/
-out/
-build/
-coverage/
-*.tsbuildinfo
-next-env.d.ts
-
-.env
-.env.local
-.env*.local
 
 # Cached K-Ruoka responses stay local: this repo is public and the catalogue
 # is Kesko's data, not ours. Never commit it.
-.cache/
-data/catalogue/
-
+*.tsbuildinfo
 .DS_Store
+.cache/
+.data/
+.env
+.env*.local
+.env.local
+.next/
 Thumbs.db
-test-results/
+build/
+coverage/
+data/catalogue/
+next-env.d.ts
+node_modules/
+out/
 playwright-report/
 playwright/.cache/
-
-.data/
+test-results/

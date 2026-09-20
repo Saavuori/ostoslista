@@ -301,6 +301,8 @@ function patchItems(current: ItemView[], patch: Patch): ItemView[] {
     case "remove":
       return current.filter((item) => item.id !== patch.id);
     case "add":
-      return [...current, patch.item];
+      // The optimistic row and the confirmed row share an id, so during the
+      // transition both can be present. Adding blindly renders duplicate keys.
+      return current.some((item) => item.id === patch.item.id) ? current : [...current, patch.item];
   }
 }

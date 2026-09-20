@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
    * postgres-js is listed for the same class of reason.
    */
   serverExternalPackages: ["@electric-sql/pglite", "postgres"],
+  /**
+   * Next 16 blocks cross-origin requests to dev resources by default, and
+   * treats 127.0.0.1 as a different origin from localhost. The end-to-end
+   * suite drives the app over a loopback address, so without this the client
+   * bundle never loads and every interaction silently does nothing.
+   *
+   * Development only — it has no effect on a production build.
+   */
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   images: {
     // Product photos are hotlinked from Kesko's CDN rather than mirrored.
     remotePatterns: [
