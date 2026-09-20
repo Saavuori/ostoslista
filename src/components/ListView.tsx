@@ -6,6 +6,8 @@ import { ItemRow } from "@/components/ItemRow";
 import { ShareButton } from "@/components/ShareButton";
 import type { CatalogueItem } from "@/lib/catalogue/cache";
 import { api } from "@/lib/client/api";
+import type { ConnectionState } from "@/lib/client/useListStream";
+import { useListStream } from "@/lib/client/useListStream";
 import { formatCents, formatQty } from "@/lib/format";
 import { uuidv7 } from "@/lib/ids";
 import type { ItemView, ListView as ListData } from "@/lib/lists/service";
@@ -47,6 +49,31 @@ export function ListView({ list, shareUrl }: Props) {
   }, [notice]);
 
   const readOnly = list.role !== "editor";
+
+  /**
+   * Live updates from everyone else on the list.
+   *
+   * Incoming rows are merged by id rather than replacing the array, so a
+   * change arriving mid-edit cannot clobber an optimistic local update.
+   */
+  const { state: connection, viewers } = useListStream({
+    token: list.token,
+    memberId: list.memberId ?? null,
+    onItemUpserted: (incoming) =>
+      setItems((current) =>
+        current.some((i) => i.id === incoming.id)
+          ? current.map((i) => (i.id === incoming.id ? incoming : i))
+          : [...current, incoming],
+      ),
+    onItemRemoved: (itemId) => setItems((current) => current.filter((i) => i.id !== itemId)),
+    onResync: () => {
+      // Too much was missed to patch up; take the server's word for it.
+      void api
+        .getList(list.token)
+        .then((fresh) => setItems(fresh.items))
+        .catch(() => setError("Listan päivitys epäonnistui."));
+    },
+  });
 
   const { pending, done, totalCents, remainingCents } = useMemo(() => {
     const pending = optimisticItems.filter((i) => !i.checked);
@@ -190,7 +217,10 @@ export function ListView({ list, shareUrl }: Props) {
                   : "Tyhjä lista"}
             </p>
           </div>
-          <ShareButton url={shareUrl} listName={list.name} />
+          <div className="flex shrink-0 items-center gap-2">
+            <ConnectionBadge state={connection} viewers={viewers} />
+            <ShareButton url={shareUrl} listName={list.name} />
+          </div>
         </div>
       </header>
 
@@ -274,6 +304,37 @@ export function ListView({ list, shareUrl }: Props) {
       </footer>
     </div>
   );
+}
+
+/**
+ * Connection and presence.
+ *
+ * Only shown when it tells you something you would otherwise not know: that
+ * changes are not reaching anyone, or that someone else is looking at the list
+ * right now. A permanent "connected" badge is noise.
+ */
+function ConnectionBadge({ state, viewers }: { state: ConnectionState; viewers: number }) {
+  if (state === "offline") {
+    return (
+      <span className="rounded-full bg-sunk px-2.5 py-1 text-[0.6875rem] font-semibold text-ink-soft">
+        Ei yhteyttä
+      </span>
+    );
+  }
+
+  if (state === "live" && viewers > 1) {
+    return (
+      <span
+        className="tabular flex items-center gap-1 rounded-full bg-fresh-wash px-2.5 py-1 text-[0.6875rem] font-semibold text-fresh"
+        title={`${viewers} katselijaa`}
+      >
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-fresh" />
+        {viewers}
+      </span>
+    );
+  }
+
+  return null;
 }
 
 /** An empty screen is an invitation to act, not a shrug. */

@@ -4,6 +4,17 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
 /**
+ * A fresh database per run.
+ *
+ * PGlite allows one writer per directory, so a server lingering from a previous
+ * run would make the next one fail to initialise. A unique directory sidesteps
+ * that entirely and gives every run clean state, which is what we want from an
+ * end-to-end suite anyway. `globalTeardown` deletes it afterwards.
+ */
+const RUN_DB = process.env.DATABASE_URL ?? `pglite://.data/e2e-${Date.now()}`;
+process.env.E2E_RUN_DB = RUN_DB;
+
+/**
  * End-to-end configuration.
  *
  * Scoped to `tests/e2e` so it never picks up the Vitest suite, and run on a
@@ -12,6 +23,8 @@ const baseURL = `http://127.0.0.1:${PORT}`;
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
@@ -23,6 +36,7 @@ export default defineConfig({
 
   use: {
     baseURL,
+
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -46,8 +60,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     env: {
-      DATABASE_URL:
-        process.env.DATABASE_URL ?? `pglite://.data/e2e-${process.env.E2E_RUN_ID ?? "local"}`,
+      DATABASE_URL: RUN_DB,
       NEXT_PUBLIC_APP_URL: baseURL,
     },
   },

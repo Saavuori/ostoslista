@@ -10,8 +10,39 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
-### Phase 3 — Realtime sync
+### Phase 4 — Offline-first
 - Not started.
+
+## [0.4.0] — 2026-09-20
+
+### Phase 3 — Realtime sync
+
+#### Added
+- Server-Sent Events stream per list (`/api/lists/[token]/events`). SSE rather
+  than WebSockets: a list only needs server-to-client fanout, and SSE survives
+  reverse proxies and mobile radios far better — it also reconnects on its own
+  with `Last-Event-ID`, which is most of what an offline-capable client needs.
+- In-process event bus, deliberately single-instance for a single-container
+  deploy. The interface is the seam for Postgres `LISTEN`/`NOTIFY` if this ever
+  runs with more than one replica.
+- Missed events are replayed on reconnect from a bounded buffer. When the gap
+  is too large to bridge, the server says so and the client refetches rather
+  than silently showing an incomplete list.
+- Events carry their origin, so a device ignores the echo of its own writes and
+  the UI does not flicker.
+- Presence: the header shows how many people are looking at the list, and says
+  so when the connection has dropped. Both appear only when they tell you
+  something you would not otherwise know.
+- Heartbeat frames every 20s to stop proxies closing idle streams.
+- 14 bus tests and an end-to-end test that asserts two browser contexts stay in
+  sync **with no reload anywhere in it** — a reload would hide a broken stream.
+
+#### Fixed
+- Optimistic and confirmed rows share an id, which rendered duplicate React
+  keys during the transition.
+- Each end-to-end run now gets its own throwaway database. PGlite allows one
+  writer per directory, so a server lingering from a previous run made the next
+  one fail to start.
 
 ## [0.3.0] — 2026-09-20
 

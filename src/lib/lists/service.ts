@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { listItems, listMembers, lists, shareTokens } from "@/lib/db/schema";
 import { generateShareToken, isValidShareToken, uuidv7 } from "@/lib/ids";
+import { publish } from "@/lib/realtime/bus";
 import { type MergeableItem, mergeItem, sortKeyBetween } from "@/lib/sync/lww";
 import type { CreateItemInput, CreateListInput, SyncInput, UpdateItemInput } from "./validation";
 
@@ -59,6 +60,8 @@ export interface ListView {
   updatedAt: Date;
   role: Role;
   token: string;
+  /** Set when this viewer is a known member; used to ignore its own echoes. */
+  memberId: string | null;
   items: ItemView[];
 }
 
@@ -182,6 +185,7 @@ export async function getList(token: string): Promise<ListView> {
     updatedAt: list.updatedAt,
     role,
     token,
+    memberId: null,
     items: rows.map(toItemView),
   };
 }
@@ -227,7 +231,9 @@ export async function addItem(token: string, input: CreateItemInput) {
         .returning();
 
       await bumpList(tx, listId, now);
-      return { item: toItemView(updated!), merged: true };
+      const view = toItemView(updated!);
+      void publish(listId, { type: "item.updated", item: view }, input.addedBy ?? null);
+      return { item: view, merged: true };
     }
 
     const maxSortKey = existing.reduce(
@@ -258,7 +264,9 @@ export async function addItem(token: string, input: CreateItemInput) {
       .returning();
 
     await bumpList(tx, listId, now);
-    return { item: toItemView(created!), merged: false };
+    const view = toItemView(created!);
+    void publish(listId, { type: "item.added", item: view }, input.addedBy ?? null);
+    return { item: view, merged: false };
   });
 }
 
@@ -319,7 +327,9 @@ export async function updateItem(token: string, itemId: string, input: UpdateIte
       .returning();
 
     await bumpList(tx, listId, now);
-    return toItemView(updated!);
+    const view = toItemView(updated!);
+    void publish(listId, { type: "item.updated", item: view }, input.updatedBy ?? null);
+    return view;
   });
 }
 
@@ -336,6 +346,7 @@ export async function deleteItem(token: string, itemId: string, by?: string | nu
 
   if (!row) throw notFound();
   await bumpList(db, listId, now);
+  void publish(listId, { type: "item.removed", itemId: itemId }, by ?? null);
   return toItemView(row);
 }
 
@@ -411,7 +422,20 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
     .where(and(eq(listItems.listId, listId), isNull(listItems.deletedAt)))
     .orderBy(asc(listItems.sortKey), asc(listItems.id));
 
-  return rows.map(toItemView);
+  const views = rows.map(toItemView);
+
+  // A flushed offline batch can touch many rows at once; other viewers are
+  // told about each one so their lists converge without a refetch.
+  for (const edit of input.items) {
+    const view = views.find((v) => v.id === edit.id);
+    if (view) {
+      void publish(listId, { type: "item.updated", item: view }, input.memberId ?? null);
+    } else {
+      void publish(listId, { type: "item.removed", itemId: edit.id }, input.memberId ?? null);
+    }
+  }
+
+  return views;
 }
 
 /** Keeps the denormalised counter and the list's own updatedAt honest. */

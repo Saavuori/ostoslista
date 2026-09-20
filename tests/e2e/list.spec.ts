@@ -152,6 +152,44 @@ test.describe("sharing", () => {
     await otherContext.close();
   });
 
+  /**
+   * The phase 3 promise: two people, one list, no refresh button.
+   *
+   * Deliberately asserts without any reload — that is the whole feature, and
+   * a reload would hide a completely broken stream.
+   */
+  test("changes appear live for the other person without a reload", async ({ page, browser }) => {
+    const url = await createList(page, "Yhteinen lista");
+
+    const otherContext = await browser.newContext();
+    const otherPage = await otherContext.newPage();
+    await otherPage.goto(url);
+    await expect(otherPage.getByText("Tyhjä lista")).toBeVisible();
+
+    // Both are now connected, so each should see the other as a viewer.
+    await expect(page.locator("header").getByText("2")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel("Lisää tuote").fill("Maitoa");
+    await page.getByLabel("Lisää tuote").press("Enter");
+
+    // No reload anywhere in this assertion.
+    await expect(otherPage.getByText("Maitoa")).toBeVisible({ timeout: 15_000 });
+    await expect(otherPage.getByText("1 jäljellä · 0 valmiina")).toBeVisible();
+
+    // And checking off propagates back the other way.
+    await otherPage
+      .getByRole("button", { name: /Maitoa/ })
+      .first()
+      .click();
+    await expect(page.getByText("Korissa · 1")).toBeVisible({ timeout: 15_000 });
+
+    // Removal too.
+    await otherPage.getByRole("button", { name: "Poista Maitoa" }).click();
+    await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible({ timeout: 15_000 });
+
+    await otherContext.close();
+  });
+
   test("an unknown link shows a useful dead end, not a crash", async ({ page }) => {
     await page.goto("/l/ZZZZZZZZZZZZZZZZZZZZZZ");
 

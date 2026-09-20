@@ -68,7 +68,7 @@ docker compose up -d --build
 | Language | TypeScript, `strict` + `noUncheckedIndexedAccess` | |
 | Styling | Tailwind CSS v4, CSS-first `@theme` | Tokens live in `src/app/globals.css`, not a JS config |
 | Database | Postgres 18 + Drizzle ORM | Relational price data; typed queries without a heavy runtime |
-| Realtime | Server-Sent Events | One-way fanout is all a list needs, and it survives a reverse proxy far better than WebSockets |
+| Realtime | Server-Sent Events + in-process bus | One-way fanout is all a list needs, survives proxies far better than WebSockets, and reconnects itself with `Last-Event-ID` |
 | Offline | Dexie (IndexedDB) + sync queue | |
 | Lint/format | Biome | One fast tool instead of ESLint + Prettier |
 | Tests | Vitest, Testing Library, Playwright | |
@@ -150,6 +150,26 @@ these cases. **Do not change the pricing logic without running them.**
 Products are also sold three different ways (`soldBy`): `piece`, `mass`
 (loose, priced per kg) and `approximatePiece` (a whole fish, ~1.5 kg). Quantity
 is therefore `numeric` with a unit, never an integer.
+
+## Realtime
+
+`src/lib/realtime/bus.ts` is an **in-process** publish/subscribe bus. That is
+deliberate: this app deploys as one container on one VM, so a broker would be
+machinery without a job.
+
+**If this is ever run with more than one replica, the bus must be replaced with
+Postgres `LISTEN`/`NOTIFY`.** Two replicas would each only deliver events to
+the clients connected to themselves, and lists would silently diverge. The
+`publish()` signature is async purely to keep that swap a local change.
+
+Other things worth knowing before editing it:
+
+- Events carry an `origin`. A client ignores its own echo, because the local
+  optimistic update is already newer. Dropping this makes the UI flicker.
+- The replay buffer is bounded. `replaySince()` returns `null` when a client
+  was away too long, which means "refetch" — never treat that as "no changes".
+- Streams are heartbeated every 20s. Without it, proxies close idle connections
+  and clients reconnect in a loop.
 
 ## When the catalogue is unavailable
 
