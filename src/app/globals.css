@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/*
+ * Ostoslista design tokens — "Enamel & Scale"
+ *
+ * Built for two moments: adding items calmly at home, and checking them off
+ * one-handed under supermarket lighting. That second case drives the high
+ * contrast, the large tap targets and the bottom-anchored actions.
+ */
+@theme {
+  /* Surfaces: warm kitchen enamel rather than a grey app chrome. */
+  --color-paper: #faf9f6;
+  --color-surface: #ffffff;
+  --color-sunk: #f1efe9;
+
+  /* Ink: near-black with a blue cast, so it never looks muddy against warm white. */
+  --color-ink: #14171a;
+  --color-ink-soft: #5b6470;
+  --color-ink-faint: #9aa1a9;
+  --color-rule: #e4e1d9;
+
+  /* One saturated accent, borrowed from price-sticker vernacular. */
+  --color-signal: #e8501f;
+  --color-signal-dark: #c53f13;
+  --color-signal-wash: #fdeee7;
+
+  /* Reserved exclusively for savings, so green always means "cheaper". */
+  --color-fresh: #0f7a52;
+  --color-fresh-wash: #e6f4ee;
+
+  --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-martian), ui-monospace, "SF Mono", monospace;
+
+  /* A tap target you can hit while holding a basket. */
+  --spacing-touch: 3rem;
+
+  --radius-card: 0.875rem;
+
+  --ease-strike: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Shops are bright; keep weight up for legibility at arm's length. */
+    font-weight: 450;
+    -webkit-font-smoothing: antialiased;
+    /* No rubber-banding while scrubbing a long list. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Every number in this app is data: align it. */
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+  }
+
+  /* Visible keyboard focus everywhere, including on custom controls. */
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Section eyebrows encode a real thing: the aisle you are standing in. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+}
+
+/*
+ * The signature: crossing an item off.
+ *
+ * The rule is drawn rather than toggled, because the drawing is the point —
+ * it is the one moment of satisfaction the app has to offer.
+ */
+@layer components {
+  .strike {
+    position: relative;
+    display: inline;
+  }
+
+  .strike::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 55%;
+    height: 2px;
+    width: 100%;
+    background-color: currentColor;
+    transform: scaleX(0);
+    transform-origin: left center;
+    border-radius: 2px;
+  }
+
+  .strike[data-checked="true"]::after {
+    transform: scaleX(1);
+    transition: transform 220ms var(--ease-strike);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

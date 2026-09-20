@@ -1,0 +1,297 @@
+{
+  "_comment": "Trimmed from a real POST /kr-api/v2/product-search/... response (storeId N106, captured 2026-09-20). Structure is verbatim; unrelated fields removed. Covers all four pricing shapes: plain piece, batch multi-buy, per-unit discount, mass, and approximate piece.",
+  "result": [
+    {
+      "id": "6412000031849",
+      "score": 12.4,
+      "type": "product",
+      "product": {
+        "type": "product",
+        "id": "6412000031849",
+        "ean": "6412000031849",
+        "localizedName": {
+          "finnish": "Saarioinen kirjolohikeitto 300g",
+          "swedish": "Saarioinen regnbågslaxsoppa 300g",
+          "english": "Saarioinen rainbow trout soup 300g"
+        },
+        "store": { "id": "N106", "isLocal": false },
+        "isAvailable": true,
+        "popularity": 1377,
+        "section": "1304",
+        "category": {
+          "tree": [
+            { "localizedName": { "finnish": "Valmisruoka" }, "slug": "valmisruoka" },
+            {
+              "localizedName": { "finnish": "Mikrokeitot" },
+              "slug": "valmisruoka/valmisruoat-ja--keitot/mikrokeitot"
+            }
+          ],
+          "path": "valmisruoka/valmisruoat-ja--keitot/mikrokeitot",
+          "order": 157
+        },
+        "productAttributes": {
+          "ean": "6412000031849",
+          "section": "1304",
+          "origin": { "countryOfOrigin": "fi" },
+          "measurements": { "netWeight": 0.3, "contentSize": 0.3, "contentUnit": "kg" },
+          "image": { "url": "https://public.keskofiles.com/f/k-ruoka/product/6412000031849" }
+        },
+        "images": ["https://public.keskofiles.com/f/k-ruoka/product/6412000031849"],
+        "brand": { "id": "320", "name": "Saarioinen" },
+        "mobilescan": {
+          "pricing": {
+            "normal": {
+              "unit": "kpl",
+              "isApproximate": false,
+              "soldBy": { "kind": "piece" },
+              "price": 2.89,
+              "unitPrice": { "value": 9.63, "unit": "kg", "contentSize": 0.3 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6410402025602",
+      "score": 29.4,
+      "type": "product",
+      "product": {
+        "type": "product",
+        "id": "6410402025602",
+        "ean": "6410402025602",
+        "localizedName": {
+          "finnish": "Pirkka kirjolohikiusaus 300 g",
+          "swedish": "Pirkka forellfrestelse 300g",
+          "english": "Pirkka rainbow trout casserole 300g"
+        },
+        "store": { "id": "N106", "isLocal": false },
+        "isAvailable": true,
+        "popularity": 1317.8,
+        "section": "1305",
+        "category": {
+          "tree": [
+            { "localizedName": { "finnish": "Valmisruoka" }, "slug": "valmisruoka" },
+            {
+              "localizedName": { "finnish": "Mikroateriat" },
+              "slug": "valmisruoka/valmisruoat-ja--keitot/mikroateriat"
+            }
+          ],
+          "path": "valmisruoka/valmisruoat-ja--keitot/mikroateriat",
+          "order": 156
+        },
+        "productAttributes": {
+          "ean": "6410402025602",
+          "section": "1305",
+          "origin": { "countryOfOrigin": "fi" },
+          "measurements": { "netWeight": 0.3, "contentSize": 0.3, "contentUnit": "kg" },
+          "image": { "url": "https://public.keskofiles.com/f/k-ruoka/product/6410402025602" }
+        },
+        "images": ["https://public.keskofiles.com/f/k-ruoka/product/6410402025602"],
+        "brand": { "id": "1", "name": "Pirkka" },
+        "mobilescan": {
+          "pricing": {
+            "normal": {
+              "unit": "kpl",
+              "isApproximate": false,
+              "soldBy": { "kind": "piece" },
+              "price": 2.39,
+              "unitPrice": { "value": 7.97, "unit": "kg", "contentSize": 0.3 }
+            },
+            "batch": {
+              "unit": "kpl",
+              "isApproximate": false,
+              "soldBy": { "kind": "piece" },
+              "price": 4.5,
+              "amount": 2,
+              "discountPercentage": 5,
+              "discountType": "PLUSSA",
+              "startDate": "2026-08-26T21:00:00.000Z",
+              "endDate": "2027-01-03T21:59:59.000Z",
+              "unitPrice": { "value": 7.5, "unit": "kg", "contentSize": 0.6 },
+              "campaignId": "200085717"
+            }
+          },
+          "vat": 13.5
+        }
+      }
+    },
+    {
+      "id": "6405304002073",
+      "score": 29.4,
+      "type": "product",
+      "product": {
+        "type": "product",
+        "id": "6405304002073",
+        "ean": "6405304002073",
+        "localizedName": {
+          "finnish": "Kokkikartano kirjolohikiusaus 700g",
+          "swedish": "Kokkikartano regnbågslaxfrestelse 700g",
+          "english": "Kokkikartano rainbow trout casserole 700g"
+        },
+        "store": { "id": "N106", "isLocal": false },
+        "isAvailable": true,
+        "popularity": 1899.7,
+        "section": "1301",
+        "category": {
+          "tree": [
+            { "localizedName": { "finnish": "Valmisruoka" }, "slug": "valmisruoka" },
+            {
+              "localizedName": { "finnish": "Laatikot ja kiusaukset" },
+              "slug": "valmisruoka/laatikot-pastat-ja-lasagnet/laatikot-ja-kiusaukset"
+            }
+          ],
+          "path": "valmisruoka/laatikot-pastat-ja-lasagnet/laatikot-ja-kiusaukset",
+          "order": 164
+        },
+        "productAttributes": {
+          "ean": "6405304002073",
+          "section": "1301",
+          "origin": { "countryOfOrigin": "fi" },
+          "measurements": { "netWeight": 0.7, "contentSize": 0.7, "contentUnit": "kg" },
+          "image": { "url": "https://public.keskofiles.com/f/k-ruoka/product/6405304002073" }
+        },
+        "images": ["https://public.keskofiles.com/f/k-ruoka/product/6405304002073"],
+        "brand": { "id": "1986", "name": "Kokkikartano" },
+        "mobilescan": {
+          "pricing": {
+            "normal": {
+              "unit": "kpl",
+              "isApproximate": false,
+              "soldBy": { "kind": "piece" },
+              "price": 6.59,
+              "unitPrice": { "value": 9.41, "unit": "kg", "contentSize": 0.7 }
+            },
+            "discount": {
+              "unit": "kpl",
+              "isApproximate": false,
+              "soldBy": { "kind": "piece" },
+              "price": 5.89,
+              "unitPrice": { "value": 8.41, "unit": "kg", "contentSize": 0.7 },
+              "discountPercentage": 10,
+              "discountType": "PLUSSA",
+              "startDate": "2026-08-26T21:00:00.000Z",
+              "endDate": "2026-09-27T20:59:59.000Z",
+              "campaignId": "200086063"
+            }
+          },
+          "vat": 13.5
+        }
+      }
+    },
+    {
+      "id": "2000456700002-N106",
+      "score": 17.6,
+      "type": "product",
+      "product": {
+        "type": "product",
+        "id": "2000456700002-N106",
+        "ean": "2000456700002",
+        "localizedName": {
+          "finnish": "Kirjolohifilee C-leikkuu kg",
+          "swedish": "Regnbågslaxfile C kg"
+        },
+        "store": { "id": "N106", "isLocal": true },
+        "isAvailable": true,
+        "popularity": 763.8,
+        "section": "1102",
+        "category": {
+          "tree": [
+            {
+              "localizedName": { "finnish": "Kala ja merenelävät" },
+              "slug": "kala-ja-merenelavat"
+            },
+            {
+              "localizedName": { "finnish": "Kirjolohi" },
+              "slug": "kala-ja-merenelavat/tuorekala/kirjolohi"
+            }
+          ],
+          "path": "kala-ja-merenelavat/tuorekala/kirjolohi",
+          "order": 116
+        },
+        "productAttributes": {
+          "ean": "2000456700002",
+          "section": "1102",
+          "origin": { "countryOfOrigin": "fi" },
+          "measurements": { "netWeight": 1, "contentSize": 1, "contentUnit": "kg" },
+          "storeId": "N106",
+          "image": {
+            "url": "https://public.keskofiles.com/f/k-ruoka/N106/local-product/2000456700002"
+          }
+        },
+        "images": ["https://public.keskofiles.com/f/k-ruoka/N106/local-product/2000456700002"],
+        "mobilescan": {
+          "pricing": {
+            "normal": {
+              "unit": "kg",
+              "isApproximate": false,
+              "soldBy": { "kind": "mass" },
+              "price": 29.99,
+              "unitPrice": { "value": 29.99, "unit": "kg", "contentSize": 1 }
+            }
+          },
+          "vat": 13.5
+        }
+      }
+    },
+    {
+      "id": "2000409600007-N106",
+      "score": 10.6,
+      "type": "product",
+      "product": {
+        "type": "product",
+        "id": "2000409600007-N106",
+        "ean": "2000409600007",
+        "localizedName": {
+          "finnish": "Kirjolohi n. 1,5kg/kpl",
+          "swedish": "Regnbågslax Finland c. 1,5kg/st."
+        },
+        "store": { "id": "N106", "isLocal": true },
+        "isAvailable": true,
+        "popularity": 2420.3,
+        "section": "1100",
+        "category": {
+          "tree": [
+            {
+              "localizedName": { "finnish": "Kala ja merenelävät" },
+              "slug": "kala-ja-merenelavat"
+            },
+            {
+              "localizedName": { "finnish": "Kirjolohi" },
+              "slug": "kala-ja-merenelavat/tuorekala/kirjolohi"
+            }
+          ],
+          "path": "kala-ja-merenelavat/tuorekala/kirjolohi",
+          "order": 116
+        },
+        "productAttributes": {
+          "ean": "2000409600007",
+          "section": "1100",
+          "origin": { "countryOfOrigin": "fi" },
+          "measurements": {
+            "netWeight": 1,
+            "contentSize": 1,
+            "contentUnit": "kg",
+            "averageWeight": 1.5
+          },
+          "storeId": "N106",
+          "image": {
+            "url": "https://public.keskofiles.com/f/k-ruoka/N106/local-product/2000409600007"
+          }
+        },
+        "images": ["https://public.keskofiles.com/f/k-ruoka/N106/local-product/2000409600007"],
+        "mobilescan": {
+          "pricing": {
+            "normal": {
+              "unit": "kpl",
+              "isApproximate": true,
+              "soldBy": { "kind": "approximatePiece", "averageWeight": 1.5 },
+              "price": 22.49,
+              "unitPrice": { "value": 14.99, "unit": "kg", "contentSize": 1 }
+            }
+          },
+          "vat": 13.5
+        }
+      }
+    }
+  ]
+}
