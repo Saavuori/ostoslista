@@ -154,6 +154,48 @@ describe("addItem", () => {
     expect(item.priceCentsSnapshot).toBe(239);
   });
 
+  /**
+   * The row has to show what the search result showed, offline: the picture
+   * identifies the product on a shelf and the offer says to grab two.
+   */
+  it("keeps the picture, comparison price and offer with the item", async () => {
+    const { token } = await seedList();
+    await addItem(token, {
+      ean: "6410402025602",
+      nameSnapshot: "Pirkka kirjolohikiusaus 300 g",
+      priceCentsSnapshot: 225,
+      imageUrl: "https://public.keskofiles.com/f/k-ruoka/product/6410402025602",
+      comparisonCents: 750,
+      comparisonUnit: "kg",
+      discountPercent: 5,
+      discountType: "PLUSSA",
+      offerAmount: 2,
+      offerBundleCents: 450,
+      qty: 2,
+      qtyUnit: "kpl",
+    });
+
+    const [item] = (await getList(token)).items;
+
+    expect(item?.imageUrl).toContain("6410402025602");
+    expect(item?.comparisonCents).toBe(750);
+    expect(item?.comparisonUnit).toBe("kg");
+    expect(item?.discountPercent).toBe(5);
+    expect(item?.discountType).toBe("PLUSSA");
+    expect(item?.offerAmount).toBe(2);
+    expect(item?.offerBundleCents).toBe(450);
+  });
+
+  it("leaves the display fields null for a free-text item", async () => {
+    const { token } = await seedList();
+    await addItem(token, { freeText: "Jotain jälkiruoaksi", qty: 1, qtyUnit: "kpl" });
+
+    const [item] = (await getList(token)).items;
+
+    expect(item?.imageUrl).toBeNull();
+    expect(item?.offerAmount).toBeNull();
+  });
+
   it("keeps fractional quantities for goods sold by weight", async () => {
     const { token } = await seedList();
     const { item } = await addItem(token, {
@@ -397,6 +439,31 @@ describe("getHistory", () => {
     expect(entry?.ean).toBe("6410402025602");
     expect(entry?.priceCentsSnapshot).toBe(239);
     expect(entry?.aisleName).toBe("Valmisruoka");
+  });
+
+  // Re-adding from history should restore the full row, not a bare name.
+  it("keeps the picture and offer so a re-add is complete", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, {
+      ean: "6410402025602",
+      nameSnapshot: "Pirkka kirjolohikiusaus",
+      priceCentsSnapshot: 225,
+      imageUrl: "https://public.keskofiles.com/f/k-ruoka/product/6410402025602",
+      comparisonCents: 750,
+      comparisonUnit: "kg",
+      offerAmount: 2,
+      offerBundleCents: 450,
+      qty: 1,
+      qtyUnit: "kpl",
+    });
+    await deleteItem(token, item.id);
+
+    const [entry] = await getHistory(token);
+
+    expect(entry?.imageUrl).toContain("6410402025602");
+    expect(entry?.comparisonCents).toBe(750);
+    expect(entry?.offerAmount).toBe(2);
+    expect(entry?.offerBundleCents).toBe(450);
   });
 
   it("ranks the things bought most often first", async () => {

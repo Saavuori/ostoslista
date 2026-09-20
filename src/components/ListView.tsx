@@ -240,6 +240,13 @@ export function ListView({ list, shareUrl }: Props) {
       priceCentsSnapshot: null,
       aisleName: null,
       aisleOrder: null,
+      imageUrl: null,
+      comparisonCents: null,
+      comparisonUnit: null,
+      discountPercent: null,
+      discountType: null,
+      offerAmount: null,
+      offerBundleCents: null,
       qty: 1,
       qtyUnit: "kpl",
       note: null,
@@ -266,6 +273,13 @@ export function ListView({ list, shareUrl }: Props) {
       priceCentsSnapshot: entry.priceCentsSnapshot,
       aisleName: entry.aisleName,
       aisleOrder: entry.aisleOrder,
+      imageUrl: entry.imageUrl,
+      comparisonCents: entry.comparisonCents,
+      comparisonUnit: entry.comparisonUnit,
+      discountPercent: entry.discountPercent,
+      discountType: entry.discountType,
+      offerAmount: entry.offerAmount,
+      offerBundleCents: entry.offerBundleCents,
       qtyUnit: entry.qtyUnit,
     });
 
@@ -277,6 +291,13 @@ export function ListView({ list, shareUrl }: Props) {
       priceCentsSnapshot: entry.priceCentsSnapshot,
       aisleName: entry.aisleName,
       aisleOrder: entry.aisleOrder,
+      imageUrl: entry.imageUrl,
+      comparisonCents: entry.comparisonCents,
+      comparisonUnit: entry.comparisonUnit,
+      discountPercent: entry.discountPercent,
+      discountType: entry.discountType,
+      offerAmount: entry.offerAmount,
+      offerBundleCents: entry.offerBundleCents,
       qty: 1,
       qtyUnit: entry.qtyUnit,
     });
@@ -292,15 +313,28 @@ export function ListView({ list, shareUrl }: Props) {
     const qty = product.soldBy === "mass" ? 0.5 : 1;
     const qtyUnit = product.soldBy === "mass" ? "kg" : "kpl";
 
-    // Snapshotted so shopping mode still groups correctly with no connection,
-    // which is exactly when it gets used.
-    const aisle = { aisleName: product.categoryName, aisleOrder: product.categoryOrder };
+    /**
+     * Snapshotted so the row keeps the information the search result showed,
+     * with no connection — which is exactly when it is needed. The picture
+     * identifies the product on a shelf and the offer says to grab two.
+     */
+    const snapshot = {
+      aisleName: product.categoryName,
+      aisleOrder: product.categoryOrder,
+      imageUrl: product.imageUrl,
+      comparisonCents: product.comparisonCents,
+      comparisonUnit: product.comparisonUnit,
+      discountPercent: product.discountPercent,
+      discountType: product.discountType,
+      offerAmount: product.bestAmount,
+      offerBundleCents: product.bestBundleCents,
+    };
 
     const optimistic = blankItem({
       ean: product.ean,
       nameSnapshot: product.name,
       priceCentsSnapshot: product.bestUnitCents,
-      ...aisle,
+      ...snapshot,
       qty,
       qtyUnit,
     });
@@ -310,12 +344,14 @@ export function ListView({ list, shareUrl }: Props) {
       ean: product.ean,
       nameSnapshot: product.name,
       priceCentsSnapshot: product.bestUnitCents,
-      ...aisle,
+      ...snapshot,
       qty,
       qtyUnit,
     });
   }
 
+  // Reserve the picture column only when the list actually has pictures.
+  const showImages = optimisticItems.some((i) => i.imageUrl);
   const canGroup = isGroupingUseful(pending);
   const grouped = byAisle && canGroup;
 
@@ -377,6 +413,7 @@ export function ListView({ list, shareUrl }: Props) {
                             onToggle={toggle}
                             onRemove={remove}
                             disabled={readOnly}
+                            showImages={showImages}
                           />
                         ))}
                       </ul>
@@ -392,6 +429,7 @@ export function ListView({ list, shareUrl }: Props) {
                       onToggle={toggle}
                       onRemove={remove}
                       disabled={readOnly}
+                      showImages={showImages}
                     />
                   ))}
                 </ul>
@@ -409,6 +447,7 @@ export function ListView({ list, shareUrl }: Props) {
                       onToggle={toggle}
                       onRemove={remove}
                       disabled={readOnly}
+                      showImages={showImages}
                     />
                   ))}
                 </ul>

@@ -60,6 +60,13 @@ export interface SyncEdit {
   priceCentsSnapshot?: number | null;
   aisleName?: string | null;
   aisleOrder?: number | null;
+  imageUrl?: string | null;
+  comparisonCents?: number | null;
+  comparisonUnit?: string | null;
+  discountPercent?: number | null;
+  discountType?: string | null;
+  offerAmount?: number | null;
+  offerBundleCents?: number | null;
   qty?: number;
   qtyUnit?: string;
   note?: string | null;
@@ -104,6 +111,13 @@ export function toSyncPayload(
       edit.priceCentsSnapshot = patch.priceCentsSnapshot ?? null;
       edit.aisleName = patch.aisleName ?? null;
       edit.aisleOrder = patch.aisleOrder ?? null;
+      edit.imageUrl = patch.imageUrl ?? null;
+      edit.comparisonCents = patch.comparisonCents ?? null;
+      edit.comparisonUnit = patch.comparisonUnit ?? null;
+      edit.discountPercent = patch.discountPercent ?? null;
+      edit.discountType = patch.discountType ?? null;
+      edit.offerAmount = patch.offerAmount ?? null;
+      edit.offerBundleCents = patch.offerBundleCents ?? null;
     }
 
     if (patch.qty !== undefined) edit.qty = patch.qty;

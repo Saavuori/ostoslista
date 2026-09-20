@@ -41,6 +41,13 @@ export interface ItemView {
   priceCentsSnapshot: number | null;
   aisleName: string | null;
   aisleOrder: number | null;
+  imageUrl: string | null;
+  comparisonCents: number | null;
+  comparisonUnit: string | null;
+  discountPercent: number | null;
+  discountType: string | null;
+  offerAmount: number | null;
+  offerBundleCents: number | null;
   qty: number;
   qtyUnit: string;
   note: string | null;
@@ -78,6 +85,13 @@ function toItemView(row: ItemRow): ItemView {
     priceCentsSnapshot: row.priceCentsSnapshot,
     aisleName: row.aisleName,
     aisleOrder: row.aisleOrder,
+    imageUrl: row.imageUrl,
+    comparisonCents: row.comparisonCents,
+    comparisonUnit: row.comparisonUnit,
+    discountPercent: row.discountPercent,
+    discountType: row.discountType,
+    offerAmount: row.offerAmount,
+    offerBundleCents: row.offerBundleCents,
     qty: toNumber(row.qty),
     qtyUnit: row.qtyUnit,
     note: row.note,
@@ -287,6 +301,13 @@ export async function addItem(token: string, input: CreateItemInput) {
         priceCentsSnapshot: input.priceCentsSnapshot ?? null,
         aisleName: input.aisleName ?? null,
         aisleOrder: input.aisleOrder ?? null,
+        imageUrl: input.imageUrl ?? null,
+        comparisonCents: input.comparisonCents ?? null,
+        comparisonUnit: input.comparisonUnit ?? null,
+        discountPercent: input.discountPercent ?? null,
+        discountType: input.discountType ?? null,
+        offerAmount: input.offerAmount ?? null,
+        offerBundleCents: input.offerBundleCents ?? null,
         qty: String(input.qty),
         qtyUnit: input.qtyUnit,
         note: input.note ?? null,
@@ -423,6 +444,13 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
             priceCentsSnapshot: edit.priceCentsSnapshot ?? null,
             aisleName: edit.aisleName ?? null,
             aisleOrder: edit.aisleOrder ?? null,
+            imageUrl: edit.imageUrl ?? null,
+            comparisonCents: edit.comparisonCents ?? null,
+            comparisonUnit: edit.comparisonUnit ?? null,
+            discountPercent: edit.discountPercent ?? null,
+            discountType: edit.discountType ?? null,
+            offerAmount: edit.offerAmount ?? null,
+            offerBundleCents: edit.offerBundleCents ?? null,
             qty: String(edit.qty ?? 1),
             qtyUnit: edit.qtyUnit ?? "kpl",
             note: edit.note ?? null,
@@ -529,6 +557,13 @@ export interface HistoryEntry {
   priceCentsSnapshot: number | null;
   aisleName: string | null;
   aisleOrder: number | null;
+  imageUrl: string | null;
+  comparisonCents: number | null;
+  comparisonUnit: string | null;
+  discountPercent: number | null;
+  discountType: string | null;
+  offerAmount: number | null;
+  offerBundleCents: number | null;
   qtyUnit: string;
   /** How many times this has been on the list before. */
   timesUsed: number;
@@ -581,6 +616,13 @@ export async function getHistory(token: string, limit = 12): Promise<HistoryEntr
       priceCentsSnapshot: row.priceCentsSnapshot,
       aisleName: row.aisleName,
       aisleOrder: row.aisleOrder,
+      imageUrl: row.imageUrl,
+      comparisonCents: row.comparisonCents,
+      comparisonUnit: row.comparisonUnit,
+      discountPercent: row.discountPercent,
+      discountType: row.discountType,
+      offerAmount: row.offerAmount,
+      offerBundleCents: row.offerBundleCents,
       qtyUnit: row.qtyUnit,
       timesUsed: 1,
     });

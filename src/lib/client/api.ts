@@ -57,6 +57,13 @@ export const api = {
       priceCentsSnapshot?: number | null;
       aisleName?: string | null;
       aisleOrder?: number | null;
+      imageUrl?: string | null;
+      comparisonCents?: number | null;
+      comparisonUnit?: string | null;
+      discountPercent?: number | null;
+      discountType?: string | null;
+      offerAmount?: number | null;
+      offerBundleCents?: number | null;
       qty?: number;
       qtyUnit?: string;
       addedBy?: string | null;

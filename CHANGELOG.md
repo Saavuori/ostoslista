@@ -10,6 +10,30 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
+### List rows carry what the search result showed
+
+Previously a product went into the list as a name and a price, and everything
+that made it identifiable was dropped at the moment it became useful.
+
+#### Added
+- Product picture, comparison price (`7,50 €/kg`) and the offer
+  ("2 kpl 4,50 €" or "−16 %") on each list row, snapshotted onto the item so
+  they survive with no connection — the shop is where this matters and the
+  shop is where there is no signal.
+- Re-adding from history restores the whole row, not just the name.
+- The picture column is reserved per list rather than per row, so a list of
+  hand-typed items carries no empty gutter and a mixed list stays aligned.
+
+#### Notes
+- Offers render as "2 kpl 4,50 €" rather than a percentage where a multi-buy
+  applies: it says what to actually do in the aisle.
+- S-market was investigated and **cannot** be added. Every automated client —
+  an honest user-agent, plain curl, a browser user-agent — is answered with a
+  Vercel Security Checkpoint (`429`), while a real browser is served normally.
+  That is an explicit bot challenge and this project does not defeat those.
+  Product EANs do match across the chains, so cross-chain price comparison
+  would be straightforward if access were ever granted.
+
 ### Real catalogue data
 
 #### Added

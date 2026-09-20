@@ -134,6 +134,25 @@ export const listItems = pgTable(
     aisleName: varchar("aisle_name", { length: 120 }),
     aisleOrder: integer("aisle_order"),
 
+    /**
+     * The rest of what the search result showed.
+     *
+     * Snapshotted for the same reason as everything above: the shop is where
+     * this information matters and the shop is where there is no signal. A
+     * picture is how you recognise the product on a shelf, and the offer is
+     * what tells you to pick up two instead of one.
+     */
+    imageUrl: varchar("image_url", { length: 400 }),
+    /** Comparison price in cents, e.g. 750 with unit "kg" for 7,50 €/kg. */
+    comparisonCents: integer("comparison_cents"),
+    comparisonUnit: varchar("comparison_unit", { length: 8 }),
+    /** Campaign, if any. `discountType` is usually "PLUSSA" — card required. */
+    discountPercent: integer("discount_percent"),
+    discountType: varchar("discount_type", { length: 24 }),
+    /** Multi-buy: units needed and the bundle price, for "2 kpl 4,50 €". */
+    offerAmount: integer("offer_amount"),
+    offerBundleCents: integer("offer_bundle_cents"),
+
     /** Numeric, not integer: 0.4 kg of salmon is a valid quantity. */
     qty: numeric("qty", { precision: 10, scale: 3 }).notNull().default("1"),
     qtyUnit: varchar("qty_unit", { length: 8 }).notNull().default("kpl"),
