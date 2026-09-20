@@ -18,10 +18,22 @@ async function main(): Promise<void> {
     const { drizzle } = require("drizzle-orm/pglite");
     const { migrate } = require("drizzle-orm/pglite/migrator");
 
-    const client = new PGlite(url.slice("pglite://".length) || ".data/dev");
+    const dir = url.slice("pglite://".length) || ".data/dev";
+    require("node:fs").mkdirSync(dir, { recursive: true });
+
+    const client = new PGlite(dir);
     try {
       await migrate(drizzle(client), { migrationsFolder: folder });
       console.log("migrations applied (pglite)");
+    } catch (error) {
+      // PGlite allows a single writer per directory. A running dev server holds
+      // it, and the underlying failure is an opaque WASM abort, so say what is
+      // actually wrong.
+      throw new Error(
+        `Could not open the PGlite database at ${dir}. It allows one process at ` +
+          "a time — stop `npm run dev` and run this again. " +
+          `Underlying error: ${String(error)}`,
+      );
     } finally {
       await client.close();
     }

@@ -10,8 +10,43 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
-### Phase 2 — Product search, prices and totals
+### Phase 3 — Realtime sync
 - Not started.
+
+## [0.3.0] — 2026-09-20
+
+### Phase 2 — Product search, prices and totals
+
+#### Added
+- Two-tier catalogue cache: product identity (`products`) is shared across
+  stores and long-lived; price (`store_prices`) is per store with a short TTL.
+  Nothing is bulk-crawled — rows are fetched lazily for products people
+  actually put on a list.
+- Search results are memoised for 10 minutes in a bounded LRU, so autocomplete
+  does not make one upstream request per keystroke.
+- `/api/products/search` proxy, required because the browser cannot call the
+  upstream directly (no CORS headers).
+- `AddItemBar`: debounced autocomplete with product images, per-unit prices,
+  comparison prices and savings badges. Free text remains first-class —
+  pressing enter always adds what you typed.
+- Adding a product already on the list now says so instead of appearing to do
+  nothing.
+- 16 cache tests against a real Postgres and a counting upstream stub, which
+  assert how many times an API we do not own gets called.
+
+#### Known limitation
+- **Live product data is currently unavailable.** Cloudflare returns a
+  consistent `403` to server-side requests, while a real browser session
+  succeeds. No attempt is made to circumvent this.
+
+  The app runs degraded and this is tested, not accidental: search returns
+  empty with a `degraded` flag, the UI explains it, cached prices are served
+  stale rather than failing, and item name/price snapshots mean existing lists
+  still display and total correctly. Everything except autocomplete works.
+
+#### Fixed
+- Migrating while the dev server is running produced an opaque WASM abort.
+  PGlite allows one writer per directory, and the error now says that.
 
 ## [0.2.0] — 2026-09-20
 

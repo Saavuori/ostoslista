@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
+import { AddItemBar } from "@/components/AddItemBar";
 import { ItemRow } from "@/components/ItemRow";
 import { ShareButton } from "@/components/ShareButton";
+import type { CatalogueItem } from "@/lib/catalogue/cache";
 import { api } from "@/lib/client/api";
-import { formatCents } from "@/lib/format";
+import { formatCents, formatQty } from "@/lib/format";
 import { uuidv7 } from "@/lib/ids";
 import type { ItemView, ListView as ListData } from "@/lib/lists/service";
 
@@ -33,10 +35,16 @@ type Patch =
 export function ListView({ list, shareUrl }: Props) {
   const [items, setItems] = useState<ItemView[]>(list.items);
   const [optimisticItems, applyPatch] = useOptimistic(items, patchItems);
-  const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** Transient confirmation, e.g. when an add merged into an existing line. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 2400);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const readOnly = list.role !== "editor";
 
@@ -82,20 +90,47 @@ export function ListView({ list, shareUrl }: Props) {
     });
   }
 
-  function add(event: React.FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || readOnly) return;
-
-    setDraft("");
+  /**
+   * Adds a line and reconciles it with what the server returns.
+   *
+   * The optimistic row carries the id, so when the server replies — possibly
+   * having merged this into an existing line instead of inserting — we can
+   * replace or drop the placeholder without a refetch.
+   */
+  function add(optimistic: ItemView, payload: Parameters<typeof api.addItem>[1]) {
+    if (readOnly) return;
     setError(null);
-    // Keep focus so several items can be typed in a row without re-tapping.
-    inputRef.current?.focus();
+    setNotice(null);
 
-    const optimistic: ItemView = {
+    startTransition(async () => {
+      applyPatch({ type: "add", item: optimistic });
+      try {
+        const { item, merged } = await api.addItem(list.token, payload);
+        setItems((current) => {
+          const withoutPlaceholder = current.filter((i) => i.id !== optimistic.id);
+          const existing = withoutPlaceholder.some((i) => i.id === item.id);
+          return existing
+            ? withoutPlaceholder.map((i) => (i.id === item.id ? item : i))
+            : [...withoutPlaceholder, item];
+        });
+        if (merged) {
+          // The row was already on the list, so its quantity went up instead
+          // of a new line appearing. Without a word, the tap looks like it did
+          // nothing at all.
+          const label = item.nameSnapshot ?? item.freeText ?? "Tuote";
+          setNotice(`${label} · ${formatQty(item.qty, item.qtyUnit)}`);
+        }
+      } catch {
+        setError(`"${optimistic.nameSnapshot ?? optimistic.freeText}" ei tallentunut.`);
+      }
+    });
+  }
+
+  function blankItem(overrides: Partial<ItemView>): ItemView {
+    return {
       id: uuidv7(),
       ean: null,
-      freeText: text,
+      freeText: null,
       nameSnapshot: null,
       priceCentsSnapshot: null,
       qty: 1,
@@ -109,25 +144,35 @@ export function ListView({ list, shareUrl }: Props) {
       updatedAt: new Date(),
       updatedBy: null,
       deletedAt: null,
+      ...overrides,
     };
+  }
 
-    startTransition(async () => {
-      applyPatch({ type: "add", item: optimistic });
-      try {
-        const { item } = await api.addItem(list.token, {
-          id: optimistic.id,
-          freeText: text,
-          qty: 1,
-          qtyUnit: "kpl",
-        });
-        setItems((current) =>
-          current.some((i) => i.id === item.id)
-            ? current.map((i) => (i.id === item.id ? item : i))
-            : [...current, item],
-        );
-      } catch {
-        setError(`"${text}" ei tallentunut.`);
-      }
+  function addFreeText(text: string) {
+    const optimistic = blankItem({ freeText: text });
+    add(optimistic, { id: optimistic.id, freeText: text, qty: 1, qtyUnit: "kpl" });
+  }
+
+  function addProduct(product: CatalogueItem) {
+    // Loose goods default to a sensible weight rather than "1 kg".
+    const qty = product.soldBy === "mass" ? 0.5 : 1;
+    const qtyUnit = product.soldBy === "mass" ? "kg" : "kpl";
+
+    const optimistic = blankItem({
+      ean: product.ean,
+      nameSnapshot: product.name,
+      priceCentsSnapshot: product.bestUnitCents,
+      qty,
+      qtyUnit,
+    });
+
+    add(optimistic, {
+      id: optimistic.id,
+      ean: product.ean,
+      nameSnapshot: product.name,
+      priceCentsSnapshot: product.bestUnitCents,
+      qty,
+      qtyUnit,
     });
   }
 
@@ -194,6 +239,10 @@ export function ListView({ list, shareUrl }: Props) {
           <p role="alert" className="mb-2 text-xs font-medium text-signal-dark">
             {error}
           </p>
+        ) : notice ? (
+          <p role="status" className="mb-2 text-xs font-medium text-ink-soft">
+            Oli jo listalla — määrä nyt {notice}
+          </p>
         ) : null}
 
         {totalCents > 0 ? (
@@ -216,25 +265,11 @@ export function ListView({ list, shareUrl }: Props) {
             Tämä linkki on vain katselua varten.
           </p>
         ) : (
-          <form onSubmit={add} className="flex gap-2">
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Lisää tuote…"
-              aria-label="Lisää tuote"
-              enterKeyHint="done"
-              autoComplete="off"
-              className="h-touch min-w-0 flex-1 rounded-full border border-rule bg-surface px-4 text-base text-ink placeholder:text-ink-faint focus:border-signal focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={draft.trim().length === 0}
-              className="h-touch shrink-0 rounded-full bg-signal px-5 text-sm font-semibold text-white transition-transform active:scale-95 disabled:bg-ink-faint"
-            >
-              Lisää
-            </button>
-          </form>
+          <AddItemBar
+            storeId={list.storeId}
+            onAddProduct={addProduct}
+            onAddFreeText={addFreeText}
+          />
         )}
       </footer>
     </div>

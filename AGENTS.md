@@ -109,11 +109,20 @@ product API. Things that follow from that:
   calling it directly fails at preflight. Verified:
   `No 'Access-Control-Allow-Origin' header is present`. Everything client-side
   goes through our own `/api/products/*` routes.
-- **Send browser-shaped headers.** Identical URLs return `409` for a bare
-  request and `200` from the site itself. `upstreamHeaders()` in `client.ts`
-  exists for this reason.
-- **Cloudflare sits in front of it.** Expect challenges from datacentre IPs.
-  Back off; do not retry harder.
+- **Server-side calls are currently blocked.** Cloudflare returns a consistent
+  `403` to requests from a server, while the identical URL returns `200` from a
+  real browser session that holds a clearance cookie. Verified from this
+  machine, three attempts, no transient successes.
+
+  **Do not try to work around this.** Defeating bot protection is out of scope
+  for this project — it is also a foundation that would break without warning
+  and put the project on the wrong side of Kesko's terms. `upstreamHeaders()`
+  sends a browser-shaped header set, which was written before the block was
+  discovered; treat it as a liability to revisit, not a pattern to extend.
+
+  Until a supported data source exists, the app runs **degraded**: search
+  returns no results, the UI says so, and free-text items work normally. That
+  path is deliberate and tested — see "When the catalogue is unavailable".
 - **Never bulk-crawl.** Prices are per-store (`storeId=N106` is Iso Omena), so a
   full mirror would be ~1,000 stores × ~20,000 products daily. Instead: cache
   product identity globally and long-lived, cache price per `(ean, storeId)`
@@ -141,6 +150,20 @@ these cases. **Do not change the pricing logic without running them.**
 Products are also sold three different ways (`soldBy`): `piece`, `mass`
 (loose, priced per kg) and `approximatePiece` (a whole fish, ~1.5 kg). Quantity
 is therefore `numeric` with a unit, never an integer.
+
+## When the catalogue is unavailable
+
+This is a first-class state, not an error case.
+
+- `/api/products/search` returns `200` with `{ items: [], degraded: true }`
+  rather than an error status, because a failed search must never block adding
+  something to a list.
+- `AddItemBar` shows a quiet line explaining that search is unavailable and
+  that names still work. It does not look like a crash.
+- `getPrices()` serves a **stale cached price** rather than failing. Someone
+  standing in a shop is better served by yesterday's price than by an error.
+- Items carry `nameSnapshot` and `priceCentsSnapshot`, so a list keeps
+  displaying correctly and totalling correctly with no catalogue at all.
 
 ## Conventions
 

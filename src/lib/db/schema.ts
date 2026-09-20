@@ -180,3 +180,87 @@ export type ListMember = typeof listMembers.$inferSelect;
 /** Text used in the UI. Kept here so the DB and the client agree. */
 export const ITEM_ROLES = ["editor", "viewer"] as const;
 export type Role = (typeof ITEM_ROLES)[number];
+
+/**
+ * Cached product identity.
+ *
+ * Keyed by EAN and shared across every store, because a product's name, brand,
+ * picture and category do not vary by shop — only its price does. This is the
+ * long-lived half of the cache.
+ *
+ * Nothing here is ever committed to the repository: it is Kesko's data, cached
+ * for the lists people actually keep. See AGENTS.md.
+ */
+export const products = pgTable(
+  "products",
+  {
+    ean: varchar("ean", { length: 20 }).primaryKey(),
+    name: varchar("name", { length: 200 }).notNull(),
+    nameSv: varchar("name_sv", { length: 200 }),
+    brand: varchar("brand", { length: 120 }),
+    categoryPath: varchar("category_path", { length: 200 }),
+    categoryName: varchar("category_name", { length: 120 }),
+    /** Store department code — the closest thing to a physical aisle. */
+    section: varchar("section", { length: 16 }),
+    categoryOrder: integer("category_order"),
+    imageUrl: varchar("image_url", { length: 400 }),
+    originCountry: varchar("origin_country", { length: 8 }),
+    contentSize: numeric("content_size", { precision: 10, scale: 3 }),
+    contentUnit: varchar("content_unit", { length: 8 }),
+    /** "piece" | "mass" | "approximatePiece" */
+    soldBy: varchar("sold_by", { length: 20 }).notNull().default("piece"),
+    averageWeight: numeric("average_weight", { precision: 10, scale: 3 }),
+    popularity: numeric("popularity", { precision: 12, scale: 3 }).notNull().default("0"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("products_name_idx").on(table.name)],
+);
+
+/**
+ * Cached price for one product in one store.
+ *
+ * The short-lived half of the cache. Prices are per-store, so this table is
+ * refreshed on a TTL and only for products someone has on a list — never by
+ * crawling the whole assortment.
+ *
+ * `best*` columns hold the cheapest offer already resolved, so reading a list
+ * total never has to re-derive it. Money is stored in cents.
+ */
+export const storePrices = pgTable(
+  "store_prices",
+  {
+    ean: varchar("ean", { length: 20 }).notNull(),
+    storeId: varchar("store_id", { length: 16 }).notNull(),
+
+    /** Shelf price with no card and no campaign. */
+    normalCents: integer("normal_cents").notNull(),
+    unit: varchar("unit", { length: 8 }).notNull().default("kpl"),
+
+    /** Cheapest offer, per single unit. */
+    bestUnitCents: integer("best_unit_cents").notNull(),
+    /** "normal" | "discount" | "batch" */
+    bestKind: varchar("best_kind", { length: 16 }).notNull().default("normal"),
+    /** Units you must buy for `bestBundleCents`; 1 unless it is a multi-buy. */
+    bestAmount: integer("best_amount").notNull().default(1),
+    /** What the till charges for `bestAmount` units. */
+    bestBundleCents: integer("best_bundle_cents").notNull(),
+
+    /** Comparison price per kg/l, in cents. */
+    comparisonCents: integer("comparison_cents"),
+    comparisonUnit: varchar("comparison_unit", { length: 8 }),
+
+    discountPercent: integer("discount_percent"),
+    discountType: varchar("discount_type", { length: 24 }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+
+    isAvailable: boolean("is_available").notNull().default(true),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("store_prices_pk").on(table.ean, table.storeId),
+    index("store_prices_stale_idx").on(table.fetchedAt),
+  ],
+);
+
+export type Product = typeof products.$inferSelect;
+export type StorePrice = typeof storePrices.$inferSelect;
