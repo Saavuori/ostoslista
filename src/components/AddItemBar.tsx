@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import type { CatalogueItem } from "@/lib/catalogue/cache";
 import { formatCents } from "@/lib/format";
+import { productImageUrl } from "@/lib/images";
 
 interface Props {
   storeId: string;
@@ -108,17 +109,18 @@ export function AddItemBar({ storeId, onAddProduct, onAddFreeText }: Props) {
                 className="flex min-h-touch w-full items-center gap-3 p-2.5 text-left active:bg-sunk"
               >
                 {item.imageUrl ? (
-                  // Hotlinked from Kesko's CDN rather than mirrored.
+                  // Hotlinked from Kesko's CDN rather than mirrored, and asked
+                  // for at the size actually drawn — the originals are ~1440px.
                   <Image
-                    src={item.imageUrl}
+                    src={productImageUrl(item.imageUrl, 48) ?? item.imageUrl}
                     alt=""
-                    width={40}
-                    height={40}
+                    width={96}
+                    height={96}
                     unoptimized
-                    className="size-10 shrink-0 rounded-md bg-sunk object-contain"
+                    className="size-12 shrink-0 rounded-md bg-white object-contain p-0.5"
                   />
                 ) : (
-                  <span aria-hidden="true" className="size-10 shrink-0 rounded-md bg-sunk" />
+                  <span aria-hidden="true" className="size-12 shrink-0 rounded-md bg-sunk" />
                 )}
 
                 <span className="min-w-0 flex-1">
