@@ -1,9 +1,11 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, storePrices } from "@/lib/db/schema";
 import { type KRuokaClient, kruoka } from "@/lib/kruoka/client";
 import { toCents } from "@/lib/kruoka/normalize";
+import { fetchProductBySlug } from "@/lib/kruoka/productPage";
 import type { Product as UpstreamProduct } from "@/lib/kruoka/types";
+import { normalizeQuery } from "@/lib/text";
 
 /**
  * The catalogue cache.
@@ -223,40 +225,117 @@ export interface SearchOptions {
 }
 
 /**
- * Searches the assortment of one store.
+ * Searches the local product index.
  *
- * Results are memoised briefly and written through to the cache, so the rest
- * of the app can read a price later without another upstream call.
+ * No network call happens here. The index is built from K-Ruoka's sitemaps
+ * (see `lib/kruoka/sitemap.ts`), so autocomplete is a database query rather
+ * than a request to someone else's API on every keystroke.
+ *
+ * Prices are attached from the cache when we already have them, and fetched
+ * lazily from the product page otherwise — only for the handful of rows
+ * actually shown.
  */
 export async function searchCatalogue(
   query: string,
   options: SearchOptions,
 ): Promise<CatalogueItem[]> {
-  const trimmed = query.trim();
+  // Folded so "leipa" finds "leipä"; `searchName` is stored folded to match.
+  const trimmed = normalizeQuery(query);
   if (trimmed.length < 2) return [];
 
-  const key = `${options.storeId}:${trimmed.toLowerCase()}:${options.limit ?? 24}`;
+  const limit = options.limit ?? 24;
+  const key = `${options.storeId}:${trimmed}:${limit}`;
   const cached = readSearchCache(key);
   if (cached) return cached.map(toCatalogueItem);
 
-  const client = options.client ?? kruoka;
-  const results = await client.searchProducts(trimmed, {
-    storeId: options.storeId,
-    limit: options.limit ?? 24,
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
+  const pattern = `%${trimmed.replace(/[%_]/g, "")}%`;
+  const prefix = `${trimmed.replace(/[%_]/g, "")}%`;
 
-  // Unavailable products are noise in an autocomplete: you cannot buy them.
-  const usable = results.filter((item) => item.isAvailable);
+  const matches = await db
+    .select()
+    .from(products)
+    .where(or(like(products.searchName, pattern), like(products.name, pattern)))
+    // A prefix match is almost always what was meant, so rank those first.
+    .orderBy(sql`case when ${products.searchName} like ${prefix} then 0 else 1 end`, products.name)
+    .limit(limit);
 
-  writeSearchCache(key, usable);
+  if (matches.length === 0) return [];
 
-  // Caching must never break the search itself.
-  await persist(usable, options.storeId).catch((error) => {
-    console.error("catalogue cache write failed:", error);
-  });
+  const eans = matches.map((row) => row.ean);
+  const prices = await db
+    .select()
+    .from(storePrices)
+    .where(and(inArray(storePrices.ean, eans), eq(storePrices.storeId, options.storeId)));
 
-  return usable.map(toCatalogueItem);
+  const priceByEan = new Map(prices.map((row) => [row.ean, row]));
+  const now = Date.now();
+
+  const items: CatalogueItem[] = [];
+
+  for (const row of matches) {
+    const price = priceByEan.get(row.ean);
+    const fresh = price && now - price.fetchedAt.getTime() <= PRICE_TTL_MS;
+
+    if (price && fresh) {
+      items.push(fromCachedRow(row, price));
+      continue;
+    }
+
+    // Not cached, or stale: fetch this one product's page.
+    if (row.slug) {
+      try {
+        const product = await fetchProductBySlug(row.slug, {
+          storeId: options.storeId,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        if (product) {
+          await persist([product], options.storeId).catch(() => undefined);
+          items.push(toCatalogueItem(product));
+          continue;
+        }
+      } catch {
+        // Fall through: a stale price is better than dropping the result.
+      }
+    }
+
+    if (price) items.push(fromCachedRow(row, price));
+  }
+
+  return items;
+}
+
+/** Builds a result from the two cache tables, with no network access. */
+function fromCachedRow(
+  product: typeof products.$inferSelect,
+  price: typeof storePrices.$inferSelect,
+): CatalogueItem {
+  return {
+    ean: product.ean,
+    name: product.name,
+    brand: product.brand,
+    imageUrl: product.imageUrl ?? `https://public.keskofiles.com/f/k-ruoka/product/${product.ean}`,
+    categoryName: product.categoryName,
+    section: product.section,
+    categoryOrder: product.categoryOrder,
+    soldBy: product.soldBy,
+    averageWeight: product.averageWeight === null ? null : Number(product.averageWeight),
+    contentSize: product.contentSize === null ? null : Number(product.contentSize),
+    contentUnit: product.contentUnit,
+    originCountry: product.originCountry,
+
+    unit: price.unit,
+    normalCents: price.normalCents,
+    bestUnitCents: price.bestUnitCents,
+    bestKind: price.bestKind,
+    bestAmount: price.bestAmount,
+    bestBundleCents: price.bestBundleCents,
+    comparisonCents: price.comparisonCents,
+    comparisonUnit: price.comparisonUnit,
+    discountPercent: price.discountPercent,
+    discountType: price.discountType,
+    validUntil: price.validUntil ? price.validUntil.toISOString() : null,
+    isApproximate: false,
+  };
 }
 
 /**
@@ -295,9 +374,21 @@ export async function getPrices(
   const missing = eans.filter((ean) => !out.has(ean));
   const toFetch = [...new Set([...stale, ...missing])];
 
+  const slugs = new Map(
+    (
+      await db
+        .select({ ean: products.ean, slug: products.slug })
+        .from(products)
+        .where(inArray(products.ean, toFetch))
+    ).map((row) => [row.ean, row.slug]),
+  );
+
   for (const ean of toFetch) {
     try {
-      const product = await client.lookupByEan(ean, { storeId });
+      const slug = slugs.get(ean);
+      const product = slug
+        ? await fetchProductBySlug(slug, { storeId })
+        : await client.lookupByEan(ean, { storeId });
       if (!product) continue;
       const item = toCatalogueItem(product);
       out.set(ean, {

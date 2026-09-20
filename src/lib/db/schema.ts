@@ -206,6 +206,10 @@ export const products = pgTable(
   {
     ean: varchar("ean", { length: 20 }).primaryKey(),
     name: varchar("name", { length: 200 }).notNull(),
+    /** URL slug for the public product page — how a price is fetched. */
+    slug: varchar("slug", { length: 300 }),
+    /** Lowercased name, indexed for prefix and substring search. */
+    searchName: varchar("search_name", { length: 200 }),
     nameSv: varchar("name_sv", { length: 200 }),
     brand: varchar("brand", { length: 120 }),
     categoryPath: varchar("category_path", { length: 200 }),
@@ -223,7 +227,11 @@ export const products = pgTable(
     popularity: numeric("popularity", { precision: 12, scale: 3 }).notNull().default("0"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("products_name_idx").on(table.name)],
+  (table) => [
+    index("products_name_idx").on(table.name),
+    // Drives autocomplete; search runs entirely against this table.
+    index("products_search_idx").on(table.searchName),
+  ],
 );
 
 /**

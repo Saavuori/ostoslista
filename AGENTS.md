@@ -109,20 +109,30 @@ product API. Things that follow from that:
   calling it directly fails at preflight. Verified:
   `No 'Access-Control-Allow-Origin' header is present`. Everything client-side
   goes through our own `/api/products/*` routes.
-- **Server-side calls are currently blocked.** Cloudflare returns a consistent
-  `403` to requests from a server, while the identical URL returns `200` from a
-  real browser session that holds a clearance cookie. Verified from this
-  machine, three attempts, no transient successes.
+- **The site cannot be read automatically. At all.** Verified on 2026-09-20:
 
-  **Do not try to work around this.** Defeating bot protection is out of scope
-  for this project — it is also a foundation that would break without warning
-  and put the project on the wrong side of Kesko's terms. `upstreamHeaders()`
-  sends a browser-shaped header set, which was written before the block was
-  discovered; treat it as a liability to revisit, not a pattern to extend.
+  | Client | Result |
+  |---|---|
+  | `/kr-api/` from a server | `403` |
+  | Node `fetch` of any page, any headers | `403` |
+  | `curl` with a browser UA | `200` |
+  | Headless Chromium (Playwright) | `403`, page titled "Just a moment…" |
 
-  Until a supported data source exists, the app runs **degraded**: search
-  returns no results, the UI says so, and free-text items work normally. That
-  path is deliberate and tested — see "When the catalogue is unavailable".
+  That last one is Cloudflare's interstitial **bot challenge**. Getting past it
+  means defeating bot detection, which this project does not do — not with a
+  stealth browser, not by solving the challenge, not by spoofing a TLS
+  fingerprint. Do not add any of those.
+
+  **The catalogue is therefore loaded from a snapshot.** `npm run
+  catalogue:import` reads `.data/seed/*.txt` (gitignored — it is Kesko's data
+  and this repo is public), captured by a human browsing the public category
+  pages. `scripts/ingest-catalogue.ts` automates the same extraction and is
+  kept because it works wherever the challenge does not fire, but it is not a
+  path to rely on.
+
+  The proper fix is an agreement with Kesko. Until then the catalogue is a
+  point-in-time snapshot and prices drift.
+
 - **Never bulk-crawl.** Prices are per-store (`storeId=N106` is Iso Omena), so a
   full mirror would be ~1,000 stores × ~20,000 products daily. Instead: cache
   product identity globally and long-lived, cache price per `(ean, storeId)`

@@ -26,7 +26,10 @@
     "docker:build": "docker build -t ostoslista:local .",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f app"
+    "docker:logs": "docker compose logs -f app",
+    "catalogue:sync": "tsx --env-file-if-exists=.env scripts/sync-catalogue.ts",
+    "catalogue:ingest": "tsx --env-file-if-exists=.env scripts/ingest-catalogue.ts",
+    "catalogue:import": "tsx --env-file-if-exists=.env scripts/import-seed.ts"
   },
   "dependencies": {
     "dexie": "4.4.6",

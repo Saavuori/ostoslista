@@ -10,7 +10,30 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
-Nothing yet.
+### Real catalogue data
+
+#### Added
+- **Local product index.** Search runs entirely against the `products` table
+  instead of calling an upstream API per keystroke — instant, and it costs
+  nobody anything.
+- Finnish diacritic folding, so "leipa" finds "leipä". Names are stored folded
+  and queries are folded to match.
+- `npm run catalogue:import` loads a catalogue snapshot from `.data/seed/`
+  (gitignored: it is Kesko's data and this repository is public).
+- `npm run catalogue:ingest` extracts the same data by driving a real browser
+  over the public category pages.
+- Product-page reader (`productPage.ts`) parsing the schema.org JSON-LD the
+  site publishes, and a sitemap reader (`sitemap.ts`) that recovers names and
+  EANs from product URL slugs.
+- Aisle ordering taken from the site's own category order, so shopping mode
+  follows the real layout of a shop.
+
+#### Notes on the data source
+Automated access is blocked at every level — the internal API, plain
+server-side fetches, and headless Chromium, which gets Cloudflare's "Just a
+moment…" bot challenge. That is bot detection, and this project does not defeat
+it. The catalogue is therefore a snapshot rather than a live feed, and the
+honest fix is an agreement with Kesko.
 
 ## [1.0.0] — 2026-09-20
 
