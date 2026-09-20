@@ -67,15 +67,33 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
-      - name: Smoke-test the image
+      # Runs the exact artefact that was just pushed, addressed by digest.
+      # Reconstructing a tag here is guesswork, and was what broke this before.
+      - name: Smoke-test the pushed image
         run: |
+          # github.repository preserves the owner's casing (Saavuori/...), and
+          # Docker rejects uppercase repository names. metadata-action
+          # lowercases it for the push, so this has to match.
+          REPO=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="${{ env.REGISTRY }}/${REPO}@${{ steps.push.outputs.digest }}"
+          echo "Testing $IMAGE"
+
           docker run -d --name smoke -p 3000:3000 \
-            -e DATABASE_URL=postgres://x:x@localhost:5432/x \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$(git rev-parse --short HEAD)
+            -e DATABASE_URL=postgres://unused:unused@127.0.0.1:5432/unused \
+            "$IMAGE"
+
+          # The health endpoint deliberately does not touch the database, so
+          # this asserts that the server boots and serves, nothing more.
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3000/api/health; then
-              echo "healthy"; docker rm -f smoke; exit 0
+              echo "  -> healthy"
+              docker rm -f smoke >/dev/null
+              exit 0
             fi
             sleep 2
           done
-          echo "container never became healthy"; docker logs smoke; docker rm -f smoke; exit 1
+
+          echo "container never became healthy"
+          docker logs smoke
+          docker rm -f smoke >/dev/null
+          exit 1
