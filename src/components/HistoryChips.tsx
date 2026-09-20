@@ -21,10 +21,10 @@ interface Props {
 export function HistoryChips({ token, revision, onPick }: Props) {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `revision` is not
-  // read by the effect — it is the signal to refetch. The parent bumps it when
-  // the list changes, because what belongs in the history depends on what is
-  // currently on the list.
+  // `revision` is not read by the effect — it is the signal to refetch. The
+  // parent bumps it when the list changes, because what belongs in the history
+  // depends on what is currently on the list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch trigger
   useEffect(() => {
     const controller = new AbortController();
 
