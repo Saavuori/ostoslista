@@ -16,6 +16,10 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}", "tests/unit/**/*.test.{ts,tsx}"],
     // Playwright specs use a different runner.
     exclude: ["node_modules", ".next", "tests/e2e/**"],
+    // Booting PGlite compiles and starts a real Postgres, which comfortably
+    // exceeds the 10s default on a cold cache.
+    hookTimeout: 60_000,
+    testTimeout: 30_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],

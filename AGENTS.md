@@ -22,12 +22,22 @@ If a change makes moment 2 worse, it is the wrong change.
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d db     # Postgres only; the app runs on the host in dev
 npm run db:migrate
 npm run dev                 # http://localhost:3000
 ```
 
-Full stack in containers instead:
+That needs **no Docker and no installed Postgres**. `.env.example` points
+`DATABASE_URL` at `pglite://.data/dev` — Postgres compiled to WASM, running
+in-process. It is the same engine as production, so behaviour does not drift.
+
+Against a real Postgres instead:
+
+```bash
+docker compose up -d db
+DATABASE_URL=postgres://ostoslista:ostoslista@localhost:5432/ostoslista npm run db:migrate
+```
+
+Full stack in containers:
 
 ```bash
 docker compose up -d --build
@@ -180,3 +190,19 @@ migrations are written to be additive so a rollback does not strand the schema.
   an old build forever.
 - `npm run db:generate` writes SQL to `drizzle/`. That directory **is**
   committed and ships in the image.
+- Database drivers are listed in `serverExternalPackages`. PGlite locates its
+  WASM payload relative to its own file, and bundling rewrites that path to a
+  build-time placeholder, so it must stay external.
+- Turbopack does not pick up **new** route files created while `next dev` is
+  running — they 404 until the server restarts. If a route you just added is
+  missing, restart before debugging it.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

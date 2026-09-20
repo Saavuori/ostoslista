@@ -10,8 +10,47 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
+### Phase 2 — Product search, prices and totals
+- Not started.
+
+## [0.2.0] — 2026-09-20
+
 ### Phase 1 — Lists, items and share links
-- In progress.
+
+#### Added
+- Postgres schema (Drizzle) for lists, items, share tokens and members, with
+  the initial migration. Quantities are `numeric` with a unit, ids are
+  client-generated UUIDv7, and items are soft-deleted.
+- **Share links as the only credential.** Holding the link is the permission;
+  no account, no sign-up. Tokens are 22 characters of a Crockford-style
+  alphabet (~110 bits), revocable and optionally expiring. A revoked or expired
+  token is indistinguishable from a wrong one, so the response never confirms
+  that a list exists behind a guessed link.
+- Last-write-wins reconciliation (`src/lib/sync/lww.ts`), resolved per field:
+  - tombstones beat later edits, so a deleted item cannot be resurrected;
+  - timestamp ties break deterministically, so two devices cannot flip a value
+    back and forth forever;
+  - when both people check the same item, the first one gets the credit;
+  - client clocks are clamped to server time, so a fast clock cannot win every
+    future conflict.
+- REST API: create list, read list, add / update / delete item, and a batch
+  `sync` endpoint that returns the reconciled list.
+- Adding a product already on the list bumps its quantity instead of creating
+  a second line, and un-checks it.
+- List UI: sticky header with progress, item rows with the strike-through
+  animation, a "Korissa" section for checked items, a running total showing
+  what is left versus the full basket, and native share-sheet sharing.
+- 63 further tests, including 30 integration tests against a real Postgres
+  running in-process via PGlite.
+
+#### Changed
+- Local development needs no Docker: `DATABASE_URL=pglite://.data/dev` runs
+  Postgres as WASM in-process. `docker compose` remains for a real server.
+
+#### Fixed
+- Long product names pushed the price out of the row; the flex row was missing
+  `min-w-0`. Prices now truncate the name and hold a fixed right-aligned
+  column, which is the point of setting figures in mono.
 
 ## [0.1.0] — 2026-09-20
 

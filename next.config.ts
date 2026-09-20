@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  /**
+   * Database drivers must not be bundled.
+   *
+   * PGlite ships a WASM payload it locates relative to its own file; bundling
+   * rewrites that path to a build-time placeholder and it fails to load.
+   * postgres-js is listed for the same class of reason.
+   */
+  serverExternalPackages: ["@electric-sql/pglite", "postgres"],
   images: {
     // Product photos are hotlinked from Kesko's CDN rather than mirrored.
     remotePatterns: [

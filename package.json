@@ -20,7 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/lib/db/migrate.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env src/lib/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "verify": "npm run lint && npm run typecheck && npm run test",
     "docker:build": "docker build -t ostoslista:local .",
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
+    "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@testing-library/dom": "10.4.2",
