@@ -218,6 +218,77 @@ test.describe("product search", () => {
   });
 });
 
+test.describe("offline", () => {
+  /**
+   * The phase 4 promise, and the scenario the whole app is shaped around:
+   * you are in a shop, the signal dies, and ticking things off keeps working.
+   */
+  test("keeps working with no connection and syncs when it returns", async ({ page, context }) => {
+    await createList(page, "Kauppareissu");
+
+    const input = page.getByLabel("Lisää tuote");
+    await input.fill("Maitoa");
+    await input.press("Enter");
+    await input.fill("Leipää");
+    await input.press("Enter");
+    await expect(page.getByText("2 jäljellä · 0 valmiina")).toBeVisible();
+
+    // The signal dies.
+    await context.setOffline(true);
+
+    // Ticking off still has to work, immediately and without complaint.
+    await page
+      .getByRole("button", { name: /Maitoa/ })
+      .first()
+      .click();
+    await expect(page.getByText("Korissa · 1")).toBeVisible();
+
+    // And so does adding.
+    await input.fill("Voita");
+    await input.press("Enter");
+    await expect(page.getByText("Voita")).toBeVisible();
+
+    // The header should say the work is safe, not that something failed.
+    await expect(page.getByText("odottaa", { exact: false })).toBeVisible({ timeout: 10_000 });
+
+    // Signal returns.
+    await context.setOffline(false);
+
+    // The queue drains on its own; no user action required.
+    await expect(page.getByText("odottaa", { exact: false })).toBeHidden({ timeout: 30_000 });
+
+    // The real proof: a fresh load from the server has all of it.
+    await page.reload();
+    await expect(page.getByText("Voita")).toBeVisible();
+    await expect(page.getByText("Korissa · 1")).toBeVisible();
+    await expect(page.getByText("2 jäljellä · 1 valmiina")).toBeVisible();
+  });
+
+  test("does not lose a removal made offline", async ({ page, context }) => {
+    await createList(page, "Kauppareissu");
+
+    const input = page.getByLabel("Lisää tuote");
+    await input.fill("Maitoa");
+    await input.press("Enter");
+    await expect(page.getByText("Maitoa")).toBeVisible();
+
+    await context.setOffline(true);
+    await page.getByRole("button", { name: "Poista Maitoa" }).click();
+    await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
+
+    // Assert it was actually queued first: otherwise the drain check below
+    // would pass simply because nothing was ever pending.
+    await expect(page.getByText("odottaa", { exact: false })).toBeVisible({ timeout: 10_000 });
+
+    await context.setOffline(false);
+    await expect(page.getByText("odottaa", { exact: false })).toBeHidden({ timeout: 30_000 });
+
+    await page.reload();
+    // It must stay deleted rather than reappearing on the next sync.
+    await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
+  });
+});
+
 test.describe("accessibility and layout", () => {
   test("the add control stays reachable in the thumb zone", async ({ page }) => {
     await createList(page, "Kauppa");

@@ -69,7 +69,7 @@ docker compose up -d --build
 | Styling | Tailwind CSS v4, CSS-first `@theme` | Tokens live in `src/app/globals.css`, not a JS config |
 | Database | Postgres 18 + Drizzle ORM | Relational price data; typed queries without a heavy runtime |
 | Realtime | Server-Sent Events + in-process bus | One-way fanout is all a list needs, survives proxies far better than WebSockets, and reconnects itself with `Last-Event-ID` |
-| Offline | Dexie (IndexedDB) + sync queue | |
+| Offline | Dexie (IndexedDB) + outbox | The local copy is what the UI reads; the server is reconciled with afterwards |
 | Lint/format | Biome | One fast tool instead of ESLint + Prettier |
 | Tests | Vitest, Testing Library, Playwright | |
 | Runtime | Docker/Podman, non-root, `standalone` output | |
@@ -170,6 +170,31 @@ Other things worth knowing before editing it:
   was away too long, which means "refetch" — never treat that as "no changes".
 - Streams are heartbeated every 20s. Without it, proxies close idle connections
   and clients reconnect in a loop.
+
+## Offline
+
+`src/lib/offline/` is split so the hard part is testable without a browser:
+
+- `outbox.ts` — the decisions (collapsing, payload shape, backoff). Pure.
+- `queue.ts` — storage, fetch and the retry loop. Plumbing.
+- `db.ts` — the Dexie schema.
+
+Rules that are easy to break:
+
+- **The outbox holds intent, not history.** New changes collapse into what is
+  already queued for that row. A `delete` cancels a pending `create` outright.
+  Anything that turns this into an append-only log will flood the server after
+  a long trip.
+- **Deletes are tombstones on the wire.** The server has to tell "removed"
+  from "not mentioned".
+- **Never cache `/api/` in the service worker.** A stale list is worse than a
+  visibly missing one, and a cached write would be silently dropped.
+- **Sort keys are bounded** (`numeric(20, 6)`). Do not use sentinels like
+  `Number.MAX_SAFE_INTEGER`; they sort fine locally and fail the whole sync
+  batch at the database.
+- Failures are reported as "waiting to send", not as errors, until the queue
+  actually gives up. Telling someone mid-shop that their tap failed — when it
+  did not — is worse than saying nothing.
 
 ## When the catalogue is unavailable
 

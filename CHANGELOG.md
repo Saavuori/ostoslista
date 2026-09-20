@@ -10,8 +10,45 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
-### Phase 4 — Offline-first
+### Phase 5 — Aisle grouping, history, polish
 - Not started.
+
+## [0.5.0] — 2026-09-20
+
+### Phase 4 — Offline-first
+
+The phase the whole app is shaped around: supermarkets are concrete boxes, so
+a change made with no signal is the normal case rather than an error to report.
+
+#### Added
+- On-device storage (Dexie/IndexedDB) holding the list and an **outbox** of
+  changes the server has not confirmed.
+- The outbox stores *intent*, not a replay log. Ticking an item five times
+  offline sends one change; ticking it and then deleting it sends only the
+  delete; deleting something that was also created offline sends nothing at
+  all, because the server never heard of it.
+- The sync endpoint now accepts rows **created** offline, not just edits. An
+  entry carrying content is inserted; a bare edit for an unknown row is still
+  dropped, so a queued edit cannot resurrect a deleted item.
+- Automatic draining on reconnect, on tab focus, and otherwise on exponential
+  backoff. Changes that repeatedly fail are abandoned loudly rather than
+  retried forever in silence.
+- The header reports unsent changes ("2 odottaa") rather than an error — the
+  work is safe, and saying "failed" would be untrue.
+- Service worker for the app shell: cache-first for content-hashed build
+  assets, network-first for pages, and **never** for API calls, since a stale
+  list is worse than a visibly missing one.
+- Two end-to-end tests that genuinely go offline mid-session, edit, come back,
+  and assert the result survives a full reload from the server.
+
+#### Fixed
+- Offline-created rows carried `sortKey: Number.MAX_SAFE_INTEGER`, which
+  overflows the `numeric(20, 6)` column. The insert failed, the whole batch
+  failed, and it retried forever. Sort keys are now bounded in the schema so
+  an out-of-range value is a clean 400, and optimistic rows use a real value.
+- `useOfflineSync` rebuilt its effect on every render, which cleared the retry
+  timer before it could fire, so a queued change could sit unsent indefinitely.
+- Overlapping flushes could send the same rows twice.
 
 ## [0.4.0] — 2026-09-20
 

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Martian_Mono, Schibsted_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import "./globals.css";
 
 // next/font self-hosts these at build time, so the app still renders correctly
@@ -37,7 +38,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fi" className={`${schibsted.variable} ${martian.variable}`}>
-      <body className="min-h-dvh antialiased">{children}</body>
+      <body className="min-h-dvh antialiased">
+        {children}
+        <ServiceWorker />
+      </body>
     </html>
   );
 }

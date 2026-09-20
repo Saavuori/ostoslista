@@ -369,9 +369,38 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
         .where(and(eq(listItems.id, edit.id), eq(listItems.listId, listId)))
         .limit(1);
 
-      // An edit for a row this list never had is dropped rather than inserted:
-      // it belongs to a different list, or to one that was already removed.
-      if (!row) continue;
+      if (!row) {
+        // A row created while offline carries its content, so it can be
+        // inserted. A bare edit for an unknown row is dropped instead: it
+        // belongs to a different list, or to one already removed, and
+        // inventing a row from an edit would resurrect deleted items.
+        const isCreation = Boolean(edit.ean || edit.freeText);
+        if (!isCreation || edit.deletedAt) continue;
+
+        await tx
+          .insert(listItems)
+          .values({
+            id: edit.id,
+            listId,
+            ean: edit.ean ?? null,
+            freeText: edit.freeText ?? null,
+            nameSnapshot: edit.nameSnapshot ?? null,
+            priceCentsSnapshot: edit.priceCentsSnapshot ?? null,
+            qty: String(edit.qty ?? 1),
+            qtyUnit: edit.qtyUnit ?? "kpl",
+            note: edit.note ?? null,
+            checked: edit.checked ?? false,
+            sortKey: String(edit.sortKey ?? 0),
+            addedBy: edit.updatedBy ?? null,
+            updatedBy: edit.updatedBy ?? null,
+            createdAt: edit.updatedAt < now ? edit.updatedAt : now,
+            updatedAt: edit.updatedAt < now ? edit.updatedAt : now,
+          })
+          // Two devices can flush the same offline row; the second must not
+          // fail the whole batch.
+          .onConflictDoNothing();
+        continue;
+      }
 
       const stored = toMergeable(toItemView(row));
       const clientTime = edit.updatedAt < now ? edit.updatedAt : now;

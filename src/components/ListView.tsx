@@ -11,6 +11,8 @@ import { useListStream } from "@/lib/client/useListStream";
 import { formatCents, formatQty } from "@/lib/format";
 import { uuidv7 } from "@/lib/ids";
 import type { ItemView, ListView as ListData } from "@/lib/lists/service";
+import { cacheList } from "@/lib/offline/db";
+import { queueChange, useOfflineSync } from "@/lib/offline/queue";
 
 interface Props {
   list: ListData;
@@ -49,6 +51,34 @@ export function ListView({ list, shareUrl }: Props) {
   }, [notice]);
 
   const readOnly = list.role !== "editor";
+
+  /**
+   * The outbox.
+   *
+   * Every mutation below records its intent locally when the network call
+   * fails, and this drains the queue when connectivity comes back. A change
+   * made in a shop with no signal is the normal case, not an error.
+   */
+  const {
+    pending: pendingWrites,
+    abandoned,
+    flushNow,
+  } = useOfflineSync(list.token, list.memberId ?? null, (fresh) => setItems(fresh));
+
+  // Keep the on-device copy current so the list still opens with no signal.
+  useEffect(() => {
+    void cacheList(
+      list.token,
+      {
+        id: list.id,
+        name: list.name,
+        storeId: list.storeId,
+        role: list.role,
+        memberId: list.memberId ?? null,
+      },
+      items,
+    );
+  }, [list.token, list.id, list.name, list.storeId, list.role, list.memberId, items]);
 
   /**
    * Live updates from everyone else on the list.
@@ -99,7 +129,13 @@ export function ListView({ list, shareUrl }: Props) {
         });
         setItems((current) => current.map((i) => (i.id === updated.id ? updated : i)));
       } catch {
-        setError("Muutos ei tallentunut. Yritä uudelleen.");
+        // Offline, or the server is unreachable. Keep the change and send it
+        // later rather than telling someone mid-shop that it failed.
+        setItems((current) =>
+          current.map((i) => (i.id === item.id ? { ...i, checked: !item.checked } : i)),
+        );
+        await queueChange(list.token, item.id, "update", { checked: !item.checked });
+        flushNow();
       }
     });
   }
@@ -112,7 +148,9 @@ export function ListView({ list, shareUrl }: Props) {
         await api.deleteItem(list.token, item.id);
         setItems((current) => current.filter((i) => i.id !== item.id));
       } catch {
-        setError("Poisto ei onnistunut. Yritä uudelleen.");
+        setItems((current) => current.filter((i) => i.id !== item.id));
+        await queueChange(list.token, item.id, "delete", {});
+        flushNow();
       }
     });
   }
@@ -148,7 +186,16 @@ export function ListView({ list, shareUrl }: Props) {
           setNotice(`${label} · ${formatQty(item.qty, item.qtyUnit)}`);
         }
       } catch {
-        setError(`"${optimistic.nameSnapshot ?? optimistic.freeText}" ei tallentunut.`);
+        // The row keeps its client-generated id, so the queued creation and
+        // the optimistic row are the same thing.
+        setItems((current) =>
+          current.some((i) => i.id === optimistic.id) ? current : [...current, optimistic],
+        );
+        await queueChange(list.token, optimistic.id, "create", {
+          ...optimistic,
+          token: list.token,
+        });
+        flushNow();
       }
     });
   }
@@ -166,7 +213,9 @@ export function ListView({ list, shareUrl }: Props) {
       checked: false,
       checkedBy: null,
       checkedAt: null,
-      sortKey: Number.MAX_SAFE_INTEGER,
+      // One past the current last row. A sentinel like MAX_SAFE_INTEGER sorts
+      // correctly in the UI but overflows the numeric column on sync.
+      sortKey: items.reduce((max, i) => Math.max(max, i.sortKey), 0) + 1,
       addedBy: null,
       updatedAt: new Date(),
       updatedBy: null,
@@ -218,7 +267,7 @@ export function ListView({ list, shareUrl }: Props) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <ConnectionBadge state={connection} viewers={viewers} />
+            <ConnectionBadge state={connection} viewers={viewers} pending={pendingWrites} />
             <ShareButton url={shareUrl} listName={list.name} />
           </div>
         </div>
@@ -265,6 +314,12 @@ export function ListView({ list, shareUrl }: Props) {
 
       {/* Thumb zone: everything pressable lives here, not in the header. */}
       <footer className="sticky bottom-0 border-t border-rule bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+        {abandoned > 0 ? (
+          <p role="alert" className="mb-2 text-xs font-medium text-signal-dark">
+            {abandoned} muutosta ei saatu tallennettua.
+          </p>
+        ) : null}
+
         {error ? (
           <p role="alert" className="mb-2 text-xs font-medium text-signal-dark">
             {error}
@@ -313,7 +368,25 @@ export function ListView({ list, shareUrl }: Props) {
  * changes are not reaching anyone, or that someone else is looking at the list
  * right now. A permanent "connected" badge is noise.
  */
-function ConnectionBadge({ state, viewers }: { state: ConnectionState; viewers: number }) {
+function ConnectionBadge({
+  state,
+  viewers,
+  pending,
+}: {
+  state: ConnectionState;
+  viewers: number;
+  pending: number;
+}) {
+  // Unsent changes are the more useful fact when both are true: it tells you
+  // the work is safe, not just that the network is down.
+  if (pending > 0) {
+    return (
+      <span className="tabular rounded-full bg-sunk px-2.5 py-1 text-[0.6875rem] font-semibold text-ink-soft">
+        {pending} odottaa
+      </span>
+    );
+  }
+
   if (state === "offline") {
     return (
       <span className="rounded-full bg-sunk px-2.5 py-1 text-[0.6875rem] font-semibold text-ink-soft">

@@ -354,6 +354,103 @@ describe("syncItems", () => {
     expect(items).toHaveLength(0);
   });
 
+  describe("rows created offline", () => {
+    it("inserts a row the device made while disconnected", async () => {
+      const { token } = await seedList();
+      const id = uuidv7();
+
+      const items = await syncItems(token, {
+        memberId: ALICE,
+        items: [
+          {
+            id,
+            freeText: "Maito",
+            qty: 2,
+            qtyUnit: "kpl",
+            updatedAt: new Date(),
+            updatedBy: ALICE,
+          },
+        ],
+      });
+
+      expect(items).toHaveLength(1);
+      expect(items[0]?.id).toBe(id);
+      expect(items[0]?.freeText).toBe("Maito");
+      expect(items[0]?.qty).toBe(2);
+    });
+
+    it("inserts a catalogue product with its snapshots intact", async () => {
+      const { token } = await seedList();
+      const id = uuidv7();
+
+      const items = await syncItems(token, {
+        items: [
+          {
+            id,
+            ean: "6410402025602",
+            nameSnapshot: "Pirkka kirjolohikiusaus 300 g",
+            priceCentsSnapshot: 239,
+            qty: 1,
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      expect(items[0]?.ean).toBe("6410402025602");
+      expect(items[0]?.priceCentsSnapshot).toBe(239);
+    });
+
+    // Two devices can flush the same queued row; the second must not blow up
+    // the whole batch.
+    it("is idempotent when the same creation arrives twice", async () => {
+      const { token } = await seedList();
+      const id = uuidv7();
+      const batch = {
+        items: [{ id, freeText: "Maito", qty: 1, updatedAt: new Date() }],
+      };
+
+      await syncItems(token, batch);
+      const second = await syncItems(token, batch);
+
+      expect(second).toHaveLength(1);
+    });
+
+    // Otherwise a queued edit that arrives after a delete resurrects the row.
+    it("does not insert a row from a creation that was also deleted", async () => {
+      const { token } = await seedList();
+
+      const items = await syncItems(token, {
+        items: [
+          {
+            id: uuidv7(),
+            freeText: "Maito",
+            deletedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      expect(items).toHaveLength(0);
+    });
+
+    it("creates offline rows and edits existing ones in one batch", async () => {
+      const { token } = await seedList();
+      const existing = await addItem(token, { freeText: "Leipä", qty: 1, qtyUnit: "kpl" });
+      const created = uuidv7();
+
+      const items = await syncItems(token, {
+        items: [
+          { id: existing.item.id, checked: true, updatedAt: new Date(), updatedBy: ALICE },
+          { id: created, freeText: "Maito", qty: 3, updatedAt: new Date(), updatedBy: ALICE },
+        ],
+      });
+
+      expect(items).toHaveLength(2);
+      expect(items.find((i) => i.id === existing.item.id)?.checked).toBe(true);
+      expect(items.find((i) => i.id === created)?.qty).toBe(3);
+    });
+  });
+
   it("drops edits for rows this list never had", async () => {
     const { token } = await seedList();
     const items = await syncItems(token, {
