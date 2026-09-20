@@ -29,11 +29,21 @@ must be green before the next phase begins.
   follows the real layout of a shop.
 
 #### Notes on the data source
-Automated access is blocked at every level — the internal API, plain
-server-side fetches, and headless Chromium, which gets Cloudflare's "Just a
-moment…" bot challenge. That is bot detection, and this project does not defeat
-it. The catalogue is therefore a snapshot rather than a live feed, and the
-honest fix is an agreement with Kesko.
+The earlier conclusion — that this data could not be read at all — was wrong,
+and the error message had been saying so the whole time:
+`409 {"error":{"message":"Client version is too old - reload"}}`. That is an
+ordinary API contract, not bot protection.
+
+Search is live again, so Plussa campaign prices and multi-buy offers are back;
+the phase 0 normalizer and its tests already covered them. Requests carry
+`X-K-Build-Number`, discovered from the storefront and refreshed when the API
+says it is stale, and go through curl, which this domain serves, rather than
+Node's fetch, which it answers with a Cloudflare challenge.
+
+Nothing here defeats bot protection: no challenge is solved, no stealth browser
+is used, no TLS fingerprint is forged, and the User-Agent identifies the app
+honestly. Headless Chromium *is* challenged, which is why browser-driven
+ingestion was abandoned. The local index remains as the offline fallback.
 
 ## [1.0.0] — 2026-09-20
 

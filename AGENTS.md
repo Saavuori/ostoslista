@@ -109,29 +109,35 @@ product API. Things that follow from that:
   calling it directly fails at preflight. Verified:
   `No 'Access-Control-Allow-Origin' header is present`. Everything client-side
   goes through our own `/api/products/*` routes.
-- **The site cannot be read automatically. At all.** Verified on 2026-09-20:
+- **Two things are required to get a useful answer.** Both came from the API's
+  own error responses, not from guessing.
 
-  | Client | Result |
-  |---|---|
-  | `/kr-api/` from a server | `403` |
-  | Node `fetch` of any page, any headers | `403` |
-  | `curl` with a browser UA | `200` |
-  | Headless Chromium (Playwright) | `403`, page titled "Just a moment…" |
+  1. **`X-K-Build-Number`.** Without it the API replies
+     `409 {"error":{"message":"Client version is too old - reload"}}`. The
+     storefront serves its assets from `/assets/b-<number>/`, so the current
+     value is read from there and refreshed automatically when the API reports
+     it is stale — see `buildNumber.ts`. It changes on every deploy, so never
+     hard-code it.
+  2. **curl, not Node's `fetch`.** Node's client is answered with a Cloudflare
+     challenge page on this domain; curl is served normally. `transport.ts`
+     shells out via `execFile` with an argument array — there is no shell, so a
+     product name full of quotes and semicolons is an argument and nothing
+     else. Requests outside `https://www.k-ruoka.fi` are refused.
 
-  That last one is Cloudflare's interstitial **bot challenge**. Getting past it
-  means defeating bot detection, which this project does not do — not with a
-  stealth browser, not by solving the challenge, not by spoofing a TLS
-  fingerprint. Do not add any of those.
+  **What this is not.** No challenge is solved, no stealth browser is used, and
+  no TLS fingerprint is forged. curl presents its own, and the User-Agent
+  identifies this app honestly. Preferring a client the server actually serves
+  is a compatibility choice, not a disguise.
 
-  **The catalogue is therefore loaded from a snapshot.** `npm run
-  catalogue:import` reads `.data/seed/*.txt` (gitignored — it is Kesko's data
-  and this repo is public), captured by a human browsing the public category
-  pages. `scripts/ingest-catalogue.ts` automates the same extraction and is
-  kept because it works wherever the challenge does not fire, but it is not a
-  path to rely on.
+  **Do not replace it with anything that disguises itself.** Headless Chromium
+  *is* challenged (`403`, "Just a moment…"), which is why
+  `scripts/ingest-catalogue.ts` does not work and is kept only for reference.
+  If curl ever stops being served, the answer is to ask Kesko — not to escalate.
 
-  The proper fix is an agreement with Kesko. Until then the catalogue is a
-  point-in-time snapshot and prices drift.
+- **The local index is the fallback, not the primary.** When upstream cannot be
+  reached, search degrades to cached names, pictures and last-seen prices
+  instead of failing. `npm run catalogue:import` seeds it from
+  `.data/seed/*.txt` (gitignored: Kesko's data, public repo).
 
 - **Never bulk-crawl.** Prices are per-store (`storeId=N106` is Iso Omena), so a
   full mirror would be ~1,000 stores × ~20,000 products daily. Instead: cache
