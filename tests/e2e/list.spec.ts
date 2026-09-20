@@ -289,6 +289,31 @@ test.describe("offline", () => {
   });
 });
 
+test.describe("history", () => {
+  // Households buy the same things over and over; re-tapping last week's list
+  // is the fastest way to build this week's.
+  test("offers something removed earlier and re-adds it in one tap", async ({ page }) => {
+    await createList(page, "Kauppa");
+
+    const input = page.getByLabel("Lisää tuote");
+    await input.fill("Kahvia");
+    await input.press("Enter");
+    await expect(page.getByText("Kahvia")).toBeVisible();
+
+    await page.getByRole("button", { name: "Poista Kahvia" }).click();
+    await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
+
+    const chip = page.getByRole("button", { name: "Kahvia", exact: true });
+    await expect(chip).toBeVisible({ timeout: 10_000 });
+
+    await chip.click();
+
+    await expect(page.getByText("1 jäljellä · 0 valmiina")).toBeVisible();
+    // Once it is back on the list, offering it again is noise.
+    await expect(chip).toBeHidden({ timeout: 10_000 });
+  });
+});
+
 test.describe("accessibility and layout", () => {
   test("the add control stays reachable in the thumb zone", async ({ page }) => {
     await createList(page, "Kauppa");

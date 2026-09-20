@@ -8,6 +8,8 @@ const item = (id: string): ItemView => ({
   freeText: "Maito",
   nameSnapshot: null,
   priceCentsSnapshot: null,
+  aisleName: null,
+  aisleOrder: null,
   qty: 1,
   qtyUnit: "kpl",
   note: null,

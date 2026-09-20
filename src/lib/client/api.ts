@@ -55,6 +55,8 @@ export const api = {
       freeText?: string | null;
       nameSnapshot?: string | null;
       priceCentsSnapshot?: number | null;
+      aisleName?: string | null;
+      aisleOrder?: number | null;
       qty?: number;
       qtyUnit?: string;
       addedBy?: string | null;

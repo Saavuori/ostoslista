@@ -21,8 +21,15 @@ async function main(): Promise<void> {
     const dir = url.slice("pglite://".length) || ".data/dev";
     require("node:fs").mkdirSync(dir, { recursive: true });
 
-    const client = new PGlite(dir);
+    // Constructed inside the try so a catchable open failure gets a useful
+    // message. Note that some failures — notably opening a directory another
+    // process already holds — abort inside the WASM runtime and cannot be
+    // caught at all; those surface as a raw `Aborted()` stack. If you see one,
+    // stop `npm run dev` (PGlite allows a single writer per directory), and if
+    // it persists the local database is disposable: delete `.data/dev`.
+    let client: { close: () => Promise<void> } | undefined;
     try {
+      client = new PGlite(dir);
       await migrate(drizzle(client), { migrationsFolder: folder });
       console.log("migrations applied (pglite)");
     } catch (error) {
@@ -35,7 +42,7 @@ async function main(): Promise<void> {
           `Underlying error: ${String(error)}`,
       );
     } finally {
-      await client.close();
+      await client?.close();
     }
     return;
   }

@@ -124,6 +124,16 @@ export const listItems = pgTable(
     /** Snapshot of the unit price in cents, for offline totals. */
     priceCentsSnapshot: integer("price_cents_snapshot"),
 
+    /**
+     * Snapshot of where the product lives in the shop.
+     *
+     * Snapshotted rather than joined from `products` so shopping mode still
+     * groups correctly with no connection — which is precisely when it is
+     * being used.
+     */
+    aisleName: varchar("aisle_name", { length: 120 }),
+    aisleOrder: integer("aisle_order"),
+
     /** Numeric, not integer: 0.4 kg of salmon is a valid quantity. */
     qty: numeric("qty", { precision: 10, scale: 3 }).notNull().default("1"),
     qtyUnit: varchar("qty_unit", { length: 8 }).notNull().default("kpl"),

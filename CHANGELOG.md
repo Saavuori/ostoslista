@@ -10,8 +10,35 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
-### Phase 5 — Aisle grouping, history, polish
-- Not started.
+Nothing yet.
+
+## [1.0.0] — 2026-09-20
+
+### Phase 5 — Aisle grouping, history and polish
+
+#### Added
+- **Shopping order.** Items group by aisle so the shop can be walked once
+  instead of criss-crossed. The aisle is snapshotted onto the item rather than
+  joined from the product cache, so grouping still works with no connection —
+  which is exactly when it is used. The toggle appears only when there is more
+  than one aisle to sort into, and the choice is remembered per list.
+- **Item history.** Things this list has bought before and is not holding right
+  now, offered as one-tap chips with their price and aisle intact. Scoped to
+  the list rather than the device, so it works for whoever opens the link.
+- Migration `0002` adding `aisle_name` / `aisle_order` to list items.
+
+#### Fixed
+- **Offline edits could be silently discarded.** `updatedAt` on a stored row
+  comes from the server clock while a queued edit carries the client's, so
+  comparing them was a guess rather than a causality check. A check-off queued
+  moments after the item was added tied on timestamp, lost the tie-break, and
+  vanished — the change looked applied locally and then disappeared on reload.
+
+  Client timestamps are now reconciled against the server's: still clamped
+  against a fast clock, but a change that is not *clearly* older than what is
+  stored is treated as newer, because it is explicit user intent the server has
+  not seen. Beyond a 5s skew tolerance the stored value still wins, so a
+  genuinely stale offline edit cannot overwrite someone else's newer change.
 
 ## [0.5.0] — 2026-09-20
 

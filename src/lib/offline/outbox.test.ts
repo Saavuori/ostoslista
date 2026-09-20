@@ -26,6 +26,8 @@ function item(overrides: Partial<StoredItem> = {}): StoredItem {
     freeText: "Maito",
     nameSnapshot: null,
     priceCentsSnapshot: null,
+    aisleName: null,
+    aisleOrder: null,
     qty: 1,
     qtyUnit: "kpl",
     note: null,

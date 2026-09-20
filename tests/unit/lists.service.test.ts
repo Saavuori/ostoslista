@@ -17,9 +17,8 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-const { addItem, createList, deleteItem, getList, syncItems, updateItem } = await import(
-  "@/lib/lists/service"
-);
+const { addItem, createList, deleteItem, getHistory, getList, syncItems, updateItem } =
+  await import("@/lib/lists/service");
 const { listItems } = await import("@/lib/db/schema");
 const { uuidv7 } = await import("@/lib/ids");
 
@@ -274,6 +273,36 @@ describe("updateItem", () => {
     expect(stale.qty).toBe(9);
   });
 
+  /**
+   * The regression that shipped broken: a check-off queued moments after the
+   * item was added carried a client timestamp equal to the server's, lost the
+   * tie-break, and was silently discarded. Offline edits vanished.
+   */
+  it("applies an edit made in the same instant as the row it targets", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+
+    const updated = await updateItem(token, item.id, {
+      checked: true,
+      updatedAt: item.updatedAt,
+      updatedBy: null,
+    });
+
+    expect(updated.checked).toBe(true);
+  });
+
+  it("applies an edit whose clock is slightly behind the server's", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+
+    const updated = await updateItem(token, item.id, {
+      checked: true,
+      updatedAt: new Date(item.updatedAt.getTime() - 2000),
+    });
+
+    expect(updated.checked).toBe(true);
+  });
+
   it("rejects an item belonging to another list", async () => {
     const a = await seedList("A");
     const b = await seedList("B");
@@ -322,6 +351,75 @@ describe("deleteItem", () => {
     const second = await addItem(token, { ean: "123456789", qty: 1, qtyUnit: "kpl" });
     expect(second.merged).toBe(false);
     expect((await getList(token)).items).toHaveLength(1);
+  });
+});
+
+describe("getHistory", () => {
+  it("is empty for a new list", async () => {
+    const { token } = await seedList();
+    expect(await getHistory(token)).toEqual([]);
+  });
+
+  it("offers something that was removed", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+    await deleteItem(token, item.id);
+
+    const history = await getHistory(token);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.name).toBe("Maito");
+  });
+
+  // Offering to add something already on the list is noise.
+  it("excludes what is currently on the list", async () => {
+    const { token } = await seedList();
+    await addItem(token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+
+    expect(await getHistory(token)).toEqual([]);
+  });
+
+  it("keeps a product's price and aisle so re-adding it is complete", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, {
+      ean: "6410402025602",
+      nameSnapshot: "Pirkka kirjolohikiusaus 300 g",
+      priceCentsSnapshot: 239,
+      aisleName: "Valmisruoka",
+      aisleOrder: 156,
+      qty: 1,
+      qtyUnit: "kpl",
+    });
+    await deleteItem(token, item.id);
+
+    const [entry] = await getHistory(token);
+
+    expect(entry?.ean).toBe("6410402025602");
+    expect(entry?.priceCentsSnapshot).toBe(239);
+    expect(entry?.aisleName).toBe("Valmisruoka");
+  });
+
+  it("ranks the things bought most often first", async () => {
+    const { token } = await seedList();
+
+    for (const name of ["Maito", "Maito", "Maito", "Kahvi"]) {
+      const { item } = await addItem(token, { freeText: name, qty: 1, qtyUnit: "kpl" });
+      await deleteItem(token, item.id);
+    }
+
+    const history = await getHistory(token);
+
+    expect(history[0]?.name).toBe("Maito");
+    expect(history[0]?.timesUsed).toBe(3);
+  });
+
+  it("does not leak history between lists", async () => {
+    const a = await seedList("A");
+    const b = await seedList("B");
+    const { item } = await addItem(a.token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+    await deleteItem(a.token, item.id);
+
+    expect(await getHistory(b.token)).toEqual([]);
   });
 });
 
@@ -471,6 +569,17 @@ describe("syncItems", () => {
 
     expect(second).toHaveLength(1);
     expect(second[0]?.qty).toBe(4);
+  });
+
+  it("applies a check-off queued in the same instant the row was created", async () => {
+    const { token } = await seedList();
+    const { item } = await addItem(token, { freeText: "Maito", qty: 1, qtyUnit: "kpl" });
+
+    const items = await syncItems(token, {
+      items: [{ id: item.id, checked: true, updatedAt: item.updatedAt }],
+    });
+
+    expect(items[0]?.checked).toBe(true);
   });
 
   it("keeps a newer server value over a stale offline edit", async () => {

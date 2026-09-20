@@ -270,6 +270,13 @@ so a rollback does not strand the schema.
 - Turbopack does not pick up **new** route files created while `next dev` is
   running — they 404 until the server restarts. If a route you just added is
   missing, restart before debugging it.
+- PGlite allows **one writer per directory**. Running `npm run db:migrate`
+  while `npm run dev` is up fails with a raw `Aborted()` WASM stack that cannot
+  be caught or improved. Stop the dev server first; if it persists, delete
+  `.data/dev` — the local database is disposable.
+- Next 16 blocks cross-origin dev requests and counts `127.0.0.1` as separate
+  from `localhost`. `allowedDevOrigins` covers both; without it the client
+  bundle never loads over loopback and every interaction silently does nothing.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { listItems, listMembers, lists, shareTokens } from "@/lib/db/schema";
 import { generateShareToken, isValidShareToken, uuidv7 } from "@/lib/ids";
@@ -39,6 +39,8 @@ export interface ItemView {
   freeText: string | null;
   nameSnapshot: string | null;
   priceCentsSnapshot: number | null;
+  aisleName: string | null;
+  aisleOrder: number | null;
   qty: number;
   qtyUnit: string;
   note: string | null;
@@ -74,6 +76,8 @@ function toItemView(row: ItemRow): ItemView {
     freeText: row.freeText,
     nameSnapshot: row.nameSnapshot,
     priceCentsSnapshot: row.priceCentsSnapshot,
+    aisleName: row.aisleName,
+    aisleOrder: row.aisleOrder,
     qty: toNumber(row.qty),
     qtyUnit: row.qtyUnit,
     note: row.note,
@@ -130,6 +134,35 @@ export async function authorize(token: string, need: Role = "viewer") {
   if (need === "editor" && role !== "editor") throw forbidden();
 
   return { listId: row.listId, role };
+}
+
+/**
+ * Reconciles a client-supplied timestamp with the server's clock.
+ *
+ * Client and server clocks are different clocks, so comparing them directly is
+ * not a causality check — it is a guess. Two rules make it behave:
+ *
+ * 1. A timestamp from the future is clamped to now, so a device with a fast
+ *    clock cannot win every subsequent conflict on that list.
+ * 2. A change that is not *clearly* older than what is stored is treated as
+ *    newer. Explicit user intent that the server has not seen should land;
+ *    without this, an edit made in the same second as the row it targets gets
+ *    silently dropped on the tie-break, which is what happens to a check-off
+ *    queued moments after the item was added.
+ *
+ * Beyond the tolerance the stored value still wins, so a genuinely stale
+ * offline edit cannot overwrite someone else's newer change.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+function reconcileClientTime(clientAt: Date, storedAt: Date, now: Date): Date {
+  const clamped = clientAt.getTime() < now.getTime() ? clientAt : now;
+  const clearlyStale = clamped.getTime() < storedAt.getTime() - CLOCK_SKEW_TOLERANCE_MS;
+  if (clearlyStale) return clamped;
+
+  // Not clearly stale: make sure it actually wins rather than losing a tie.
+  const winning = Math.max(clamped.getTime(), storedAt.getTime() + 1);
+  return new Date(Math.min(winning, now.getTime() + 1));
 }
 
 /** Creates a list plus its first share token, atomically. */
@@ -252,6 +285,8 @@ export async function addItem(token: string, input: CreateItemInput) {
         freeText: input.freeText ?? null,
         nameSnapshot: input.nameSnapshot ?? null,
         priceCentsSnapshot: input.priceCentsSnapshot ?? null,
+        aisleName: input.aisleName ?? null,
+        aisleOrder: input.aisleOrder ?? null,
         qty: String(input.qty),
         qtyUnit: input.qtyUnit,
         note: input.note ?? null,
@@ -279,7 +314,6 @@ export async function addItem(token: string, input: CreateItemInput) {
 export async function updateItem(token: string, itemId: string, input: UpdateItemInput) {
   const { listId } = await authorize(token, "editor");
   const now = new Date();
-  const clientTime = input.updatedAt && input.updatedAt < now ? input.updatedAt : now;
 
   return db.transaction(async (tx) => {
     const [row] = await tx
@@ -291,6 +325,7 @@ export async function updateItem(token: string, itemId: string, input: UpdateIte
     if (!row) throw notFound();
 
     const stored = toItemView(row);
+    const clientTime = reconcileClientTime(input.updatedAt ?? now, stored.updatedAt, now);
     const incoming: MergeableItem = {
       ...toMergeable(stored),
       ...(input.qty !== undefined ? { qty: input.qty } : {}),
@@ -386,6 +421,8 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
             freeText: edit.freeText ?? null,
             nameSnapshot: edit.nameSnapshot ?? null,
             priceCentsSnapshot: edit.priceCentsSnapshot ?? null,
+            aisleName: edit.aisleName ?? null,
+            aisleOrder: edit.aisleOrder ?? null,
             qty: String(edit.qty ?? 1),
             qtyUnit: edit.qtyUnit ?? "kpl",
             note: edit.note ?? null,
@@ -403,7 +440,7 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
       }
 
       const stored = toMergeable(toItemView(row));
-      const clientTime = edit.updatedAt < now ? edit.updatedAt : now;
+      const clientTime = reconcileClientTime(edit.updatedAt, stored.updatedAt, now);
 
       const incoming: MergeableItem = {
         ...stored,
@@ -483,4 +520,73 @@ async function bumpList(
       )`,
     })
     .where(eq(lists.id, listId));
+}
+
+export interface HistoryEntry {
+  ean: string | null;
+  freeText: string | null;
+  name: string;
+  priceCentsSnapshot: number | null;
+  aisleName: string | null;
+  aisleOrder: number | null;
+  qtyUnit: string;
+  /** How many times this has been on the list before. */
+  timesUsed: number;
+}
+
+/**
+ * Things this list has bought before and is not holding right now.
+ *
+ * Households buy the same forty things over and over, so the fastest way to
+ * build next week's list is to re-tap last week's. Scoped to the list rather
+ * than the device, so it works for whoever opens the link.
+ *
+ * Rows currently on the list are excluded — offering to add something already
+ * there is noise.
+ */
+export async function getHistory(token: string, limit = 12): Promise<HistoryEntry[]> {
+  const { listId } = await authorize(token);
+
+  const rows = await db
+    .select()
+    .from(listItems)
+    .where(eq(listItems.listId, listId))
+    .orderBy(desc(listItems.updatedAt));
+
+  const live = new Set(
+    rows
+      .filter((row) => !row.deletedAt)
+      .map((row) => row.ean ?? row.freeText?.trim().toLowerCase() ?? ""),
+  );
+
+  const seen = new Map<string, HistoryEntry>();
+
+  for (const row of rows) {
+    const key = row.ean ?? row.freeText?.trim().toLowerCase() ?? "";
+    if (!key || live.has(key)) continue;
+
+    const name = row.nameSnapshot ?? row.freeText;
+    if (!name) continue;
+
+    const existing = seen.get(key);
+    if (existing) {
+      existing.timesUsed += 1;
+      continue;
+    }
+
+    seen.set(key, {
+      ean: row.ean,
+      freeText: row.freeText,
+      name,
+      priceCentsSnapshot: row.priceCentsSnapshot,
+      aisleName: row.aisleName,
+      aisleOrder: row.aisleOrder,
+      qtyUnit: row.qtyUnit,
+      timesUsed: 1,
+    });
+  }
+
+  return [...seen.values()]
+    .sort((a, b) => b.timesUsed - a.timesUsed || a.name.localeCompare(b.name, "fi"))
+    .slice(0, limit);
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import { AddItemBar } from "@/components/AddItemBar";
+import { HistoryChips } from "@/components/HistoryChips";
 import { ItemRow } from "@/components/ItemRow";
 import { ShareButton } from "@/components/ShareButton";
 import type { CatalogueItem } from "@/lib/catalogue/cache";
@@ -10,7 +11,8 @@ import type { ConnectionState } from "@/lib/client/useListStream";
 import { useListStream } from "@/lib/client/useListStream";
 import { formatCents, formatQty } from "@/lib/format";
 import { uuidv7 } from "@/lib/ids";
-import type { ItemView, ListView as ListData } from "@/lib/lists/service";
+import { groupByAisle, isGroupingUseful } from "@/lib/lists/grouping";
+import type { HistoryEntry, ItemView, ListView as ListData } from "@/lib/lists/service";
 import { cacheList } from "@/lib/offline/db";
 import { queueChange, useOfflineSync } from "@/lib/offline/queue";
 
@@ -51,6 +53,35 @@ export function ListView({ list, shareUrl }: Props) {
   }, [notice]);
 
   const readOnly = list.role !== "editor";
+
+  /**
+   * Shopping order versus the order things were added.
+   *
+   * Remembered per list in localStorage: a per-viewer convenience, not shared
+   * state — two people in different shops may reasonably want different views.
+   */
+  const [byAisle, setByAisle] = useState(false);
+  const storageKey = `ostoslista:aisle:${list.token}`;
+
+  useEffect(() => {
+    try {
+      setByAisle(window.localStorage.getItem(storageKey) === "1");
+    } catch {
+      // Private window or blocked storage; the default is fine.
+    }
+  }, [storageKey]);
+
+  function toggleAisleMode() {
+    setByAisle((on) => {
+      const next = !on;
+      try {
+        window.localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        // Not worth failing the interaction over.
+      }
+      return next;
+    });
+  }
 
   /**
    * The outbox.
@@ -207,6 +238,8 @@ export function ListView({ list, shareUrl }: Props) {
       freeText: null,
       nameSnapshot: null,
       priceCentsSnapshot: null,
+      aisleName: null,
+      aisleOrder: null,
       qty: 1,
       qtyUnit: "kpl",
       note: null,
@@ -224,6 +257,31 @@ export function ListView({ list, shareUrl }: Props) {
     };
   }
 
+  /** Re-adds something the list has bought before, with its details intact. */
+  function addFromHistory(entry: HistoryEntry) {
+    const optimistic = blankItem({
+      ean: entry.ean,
+      freeText: entry.freeText,
+      nameSnapshot: entry.ean ? entry.name : null,
+      priceCentsSnapshot: entry.priceCentsSnapshot,
+      aisleName: entry.aisleName,
+      aisleOrder: entry.aisleOrder,
+      qtyUnit: entry.qtyUnit,
+    });
+
+    add(optimistic, {
+      id: optimistic.id,
+      ean: entry.ean,
+      freeText: entry.ean ? null : entry.freeText,
+      nameSnapshot: entry.ean ? entry.name : null,
+      priceCentsSnapshot: entry.priceCentsSnapshot,
+      aisleName: entry.aisleName,
+      aisleOrder: entry.aisleOrder,
+      qty: 1,
+      qtyUnit: entry.qtyUnit,
+    });
+  }
+
   function addFreeText(text: string) {
     const optimistic = blankItem({ freeText: text });
     add(optimistic, { id: optimistic.id, freeText: text, qty: 1, qtyUnit: "kpl" });
@@ -234,10 +292,15 @@ export function ListView({ list, shareUrl }: Props) {
     const qty = product.soldBy === "mass" ? 0.5 : 1;
     const qtyUnit = product.soldBy === "mass" ? "kg" : "kpl";
 
+    // Snapshotted so shopping mode still groups correctly with no connection,
+    // which is exactly when it gets used.
+    const aisle = { aisleName: product.categoryName, aisleOrder: product.categoryOrder };
+
     const optimistic = blankItem({
       ean: product.ean,
       nameSnapshot: product.name,
       priceCentsSnapshot: product.bestUnitCents,
+      ...aisle,
       qty,
       qtyUnit,
     });
@@ -247,10 +310,14 @@ export function ListView({ list, shareUrl }: Props) {
       ean: product.ean,
       nameSnapshot: product.name,
       priceCentsSnapshot: product.bestUnitCents,
+      ...aisle,
       qty,
       qtyUnit,
     });
   }
+
+  const canGroup = isGroupingUseful(pending);
+  const grouped = byAisle && canGroup;
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-paper">
@@ -274,22 +341,61 @@ export function ListView({ list, shareUrl }: Props) {
       </header>
 
       <main className="flex-1 px-4 py-4">
+        {/*
+          Offered only when there is more than one aisle to sort into —
+          a toggle that visibly does nothing is worse than no toggle.
+        */}
+        {canGroup ? (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={toggleAisleMode}
+              aria-pressed={grouped}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                grouped ? "border-ink bg-ink text-paper" : "border-rule bg-surface text-ink-soft"
+              }`}
+            >
+              Hyllyjärjestys
+            </button>
+          </div>
+        ) : null}
         {optimisticItems.length === 0 ? (
           <EmptyState readOnly={readOnly} />
         ) : (
           <>
             {pending.length > 0 ? (
-              <ul className="overflow-hidden rounded-card border border-rule bg-surface">
-                {pending.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    onToggle={toggle}
-                    onRemove={remove}
-                    disabled={readOnly}
-                  />
-                ))}
-              </ul>
+              grouped ? (
+                <div className="space-y-5">
+                  {groupByAisle(pending).map((group) => (
+                    <section key={group.name}>
+                      <p className="eyebrow mb-2 px-1">{group.name}</p>
+                      <ul className="overflow-hidden rounded-card border border-rule bg-surface">
+                        {group.items.map((item) => (
+                          <ItemRow
+                            key={item.id}
+                            item={item}
+                            onToggle={toggle}
+                            onRemove={remove}
+                            disabled={readOnly}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <ul className="overflow-hidden rounded-card border border-rule bg-surface">
+                  {pending.map((item) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      onToggle={toggle}
+                      onRemove={remove}
+                      disabled={readOnly}
+                    />
+                  ))}
+                </ul>
+              )
             ) : null}
 
             {done.length > 0 ? (
@@ -350,11 +456,14 @@ export function ListView({ list, shareUrl }: Props) {
             Tämä linkki on vain katselua varten.
           </p>
         ) : (
-          <AddItemBar
-            storeId={list.storeId}
-            onAddProduct={addProduct}
-            onAddFreeText={addFreeText}
-          />
+          <>
+            <HistoryChips token={list.token} revision={items.length} onPick={addFromHistory} />
+            <AddItemBar
+              storeId={list.storeId}
+              onAddProduct={addProduct}
+              onAddFreeText={addFreeText}
+            />
+          </>
         )}
       </footer>
     </div>

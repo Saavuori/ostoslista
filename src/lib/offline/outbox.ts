@@ -58,6 +58,8 @@ export interface SyncEdit {
   freeText?: string | null;
   nameSnapshot?: string | null;
   priceCentsSnapshot?: number | null;
+  aisleName?: string | null;
+  aisleOrder?: number | null;
   qty?: number;
   qtyUnit?: string;
   note?: string | null;
@@ -100,6 +102,8 @@ export function toSyncPayload(
       edit.freeText = patch.freeText ?? null;
       edit.nameSnapshot = patch.nameSnapshot ?? null;
       edit.priceCentsSnapshot = patch.priceCentsSnapshot ?? null;
+      edit.aisleName = patch.aisleName ?? null;
+      edit.aisleOrder = patch.aisleOrder ?? null;
     }
 
     if (patch.qty !== undefined) edit.qty = patch.qty;

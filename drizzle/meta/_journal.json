@@ -15,6 +15,13 @@
       "when": 1789909541194,
       "tag": "0001_giant_sugar_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789923202620,
+      "tag": "0002_mixed_retro_girl",
+      "breakpoints": true
     }
   ]
 }
