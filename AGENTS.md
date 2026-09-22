@@ -198,7 +198,9 @@ Other things worth knowing before editing it:
 Rules that are easy to break:
 
 - **The outbox holds intent, not history.** New changes collapse into what is
-  already queued for that row. A `delete` cancels a pending `create` outright.
+  already queued for that row. A `delete` replaces a pending `create` with a
+  tombstone rather than cancelling it: the creation may already be in flight,
+  and a tombstone for a row the server never saw is simply ignored.
   Anything that turns this into an append-only log will flood the server after
   a long trip.
 - **Deletes are tombstones on the wire.** The server has to tell "removed"

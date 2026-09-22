@@ -4,6 +4,7 @@ import Image from "next/image";
 import { formatCents, formatQty } from "@/lib/format";
 import { productImageUrl } from "@/lib/images";
 import type { ItemView } from "@/lib/lists/service";
+import { lineTotalCents } from "@/lib/lists/totals";
 
 interface Props {
   item: ItemView;
@@ -35,7 +36,7 @@ interface Props {
  */
 export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Props) {
   const label = item.nameSnapshot ?? item.freeText ?? "Nimetön tuote";
-  const lineCents = item.priceCentsSnapshot ? Math.round(item.priceCentsSnapshot * item.qty) : null;
+  const lineCents = item.priceCentsSnapshot ? lineTotalCents(item) : null;
 
   // "2 kpl 4,50 €" is more actionable than a percentage: it says what to do.
   const offer =

@@ -19,10 +19,12 @@ import type { OutboxEntry, OutboxOp, StoredItem } from "./db";
 export function collapse(existing: OutboxEntry | undefined, incoming: OutboxEntry): OutboxEntry[] {
   if (!existing) return [incoming];
 
-  // A delete supersedes everything queued before it. If the row was also
-  // created offline the server has never seen it, so nothing needs sending.
+  // A delete supersedes everything queued before it — including a creation.
+  // It is tempting to drop both, since the server may never have seen the
+  // row, but the creation may already be in flight: dropped, the row lands on
+  // the server and nothing ever removes it. A tombstone for a row the server
+  // never received is simply ignored, so sending one is always safe.
   if (incoming.op === "delete") {
-    if (existing.op === "create") return [];
     return [{ ...incoming, seq: existing.seq, attempts: 0 }];
   }
 

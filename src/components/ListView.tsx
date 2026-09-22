@@ -7,12 +7,14 @@ import { ItemRow } from "@/components/ItemRow";
 import { ShareButton } from "@/components/ShareButton";
 import type { CatalogueItem } from "@/lib/catalogue/cache";
 import { api } from "@/lib/client/api";
+import { tabMemberId } from "@/lib/client/member";
 import type { ConnectionState } from "@/lib/client/useListStream";
 import { useListStream } from "@/lib/client/useListStream";
 import { formatCents, formatQty } from "@/lib/format";
 import { uuidv7 } from "@/lib/ids";
 import { groupByAisle, isGroupingUseful } from "@/lib/lists/grouping";
 import type { HistoryEntry, ItemView, ListView as ListData } from "@/lib/lists/service";
+import { sumCents } from "@/lib/lists/totals";
 import { cacheList } from "@/lib/offline/db";
 import { queueChange, useOfflineSync } from "@/lib/offline/queue";
 
@@ -55,6 +57,15 @@ export function ListView({ list, shareUrl }: Props) {
   const readOnly = list.role !== "editor";
 
   /**
+   * Who this tab is on the list: attributes its writes and lets it ignore the
+   * echo of its own changes. Only needed in the browser — the server render
+   * never writes — so it is read once there and never changes afterwards.
+   */
+  const [memberId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : (list.memberId ?? tabMemberId(list.token)),
+  );
+
+  /**
    * Shopping order versus the order things were added.
    *
    * Remembered per list in localStorage: a per-viewer convenience, not shared
@@ -94,7 +105,7 @@ export function ListView({ list, shareUrl }: Props) {
     pending: pendingWrites,
     abandoned,
     flushNow,
-  } = useOfflineSync(list.token, list.memberId ?? null, (fresh) => setItems(fresh));
+  } = useOfflineSync(list.token, memberId, (fresh) => setItems(fresh));
 
   // Keep the on-device copy current so the list still opens with no signal.
   useEffect(() => {
@@ -119,7 +130,7 @@ export function ListView({ list, shareUrl }: Props) {
    */
   const { state: connection, viewers } = useListStream({
     token: list.token,
-    memberId: list.memberId ?? null,
+    memberId,
     onItemUpserted: (incoming) =>
       setItems((current) =>
         current.some((i) => i.id === incoming.id)
@@ -139,13 +150,11 @@ export function ListView({ list, shareUrl }: Props) {
   const { pending, done, totalCents, remainingCents } = useMemo(() => {
     const pending = optimisticItems.filter((i) => !i.checked);
     const done = optimisticItems.filter((i) => i.checked);
-    const sum = (rows: ItemView[]) =>
-      rows.reduce((acc, i) => acc + Math.round((i.priceCentsSnapshot ?? 0) * i.qty), 0);
     return {
       pending,
       done,
-      totalCents: sum(optimisticItems),
-      remainingCents: sum(pending),
+      totalCents: sumCents(optimisticItems),
+      remainingCents: sumCents(pending),
     };
   }, [optimisticItems]);
 
@@ -157,6 +166,7 @@ export function ListView({ list, shareUrl }: Props) {
         const updated = await api.updateItem(list.token, item.id, {
           checked: !item.checked,
           updatedAt: new Date().toISOString(),
+          updatedBy: memberId,
         });
         setItems((current) => current.map((i) => (i.id === updated.id ? updated : i)));
       } catch {
@@ -176,7 +186,7 @@ export function ListView({ list, shareUrl }: Props) {
     startTransition(async () => {
       applyPatch({ type: "remove", id: item.id });
       try {
-        await api.deleteItem(list.token, item.id);
+        await api.deleteItem(list.token, item.id, memberId);
         setItems((current) => current.filter((i) => i.id !== item.id));
       } catch {
         setItems((current) => current.filter((i) => i.id !== item.id));
@@ -201,7 +211,7 @@ export function ListView({ list, shareUrl }: Props) {
     startTransition(async () => {
       applyPatch({ type: "add", item: optimistic });
       try {
-        const { item, merged } = await api.addItem(list.token, payload);
+        const { item, merged } = await api.addItem(list.token, { ...payload, addedBy: memberId });
         setItems((current) => {
           const withoutPlaceholder = current.filter((i) => i.id !== optimistic.id);
           const existing = withoutPlaceholder.some((i) => i.id === item.id);
@@ -256,9 +266,9 @@ export function ListView({ list, shareUrl }: Props) {
       // One past the current last row. A sentinel like MAX_SAFE_INTEGER sorts
       // correctly in the UI but overflows the numeric column on sync.
       sortKey: items.reduce((max, i) => Math.max(max, i.sortKey), 0) + 1,
-      addedBy: null,
+      addedBy: memberId,
       updatedAt: new Date(),
-      updatedBy: null,
+      updatedBy: memberId,
       deletedAt: null,
       ...overrides,
     };
@@ -314,6 +324,13 @@ export function ListView({ list, shareUrl }: Props) {
     const qtyUnit = product.soldBy === "mass" ? "kg" : "kpl";
 
     /**
+     * The price of one unit bought on its own. A multi-buy only applies to
+     * complete bundles, so its per-unit share is not what one costs — the
+     * bundle travels separately in `offerAmount` / `offerBundleCents`.
+     */
+    const unitCents = product.bestKind === "batch" ? product.normalCents : product.bestUnitCents;
+
+    /**
      * Snapshotted so the row keeps the information the search result showed,
      * with no connection — which is exactly when it is needed. The picture
      * identifies the product on a shelf and the offer says to grab two.
@@ -333,7 +350,7 @@ export function ListView({ list, shareUrl }: Props) {
     const optimistic = blankItem({
       ean: product.ean,
       nameSnapshot: product.name,
-      priceCentsSnapshot: product.bestUnitCents,
+      priceCentsSnapshot: unitCents,
       ...snapshot,
       qty,
       qtyUnit,
@@ -343,7 +360,7 @@ export function ListView({ list, shareUrl }: Props) {
       id: optimistic.id,
       ean: product.ean,
       nameSnapshot: product.name,
-      priceCentsSnapshot: product.bestUnitCents,
+      priceCentsSnapshot: unitCents,
       ...snapshot,
       qty,
       qtyUnit,

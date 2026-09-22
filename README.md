@@ -18,7 +18,7 @@ ilman verkkoyhteyttä. Tuotetiedot, hinnat ja kuvat tulevat K-Ruoasta.
 | 4 | Offline-first | Done |
 | 5 | Aisle grouping, history, polish | Done |
 
-162 unit and integration tests, 16 end-to-end tests.
+250 unit and integration tests, 16 end-to-end tests.
 
 ## Quick start
 
