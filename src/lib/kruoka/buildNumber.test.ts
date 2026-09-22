@@ -1,85 +1,88 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { extractBuildNumber, getBuildNumber, invalidateBuildNumber } from "./buildNumber";
+import {
+  BOOTSTRAP_BUILD_NUMBER,
+  getBuildNumber,
+  invalidateBuildNumber,
+  rememberBuildNumber,
+} from "./buildNumber";
+import { KRuokaClient } from "./client";
+import type { TransportRequest, TransportResponse } from "./transport";
 
 beforeEach(() => {
   invalidateBuildNumber();
 });
 
-describe("extractBuildNumber", () => {
-  // The API rejects requests without it: 409 "Client version is too old".
-  it("reads the build number from an asset path", () => {
-    expect(extractBuildNumber('<script src="/assets/b-32654/bundle.js"></script>')).toBe("32654");
+describe("build number", () => {
+  // The header has to be sent at all, or Cloudflare challenges the request.
+  it("starts from the bootstrap value", () => {
+    expect(getBuildNumber()).toBe(BOOTSTRAP_BUILD_NUMBER);
   });
 
-  it("returns null when the markup has no asset path", () => {
-    expect(extractBuildNumber("<html><body>hei</body></html>")).toBeNull();
+  it("remembers the value a response reports", () => {
+    expect(rememberBuildNumber({ "k-ruoka-build": "32769" })).toBe(true);
+    expect(getBuildNumber()).toBe("32769");
+  });
+
+  it("ignores responses without a usable header", () => {
+    rememberBuildNumber({ "k-ruoka-build": "32769" });
+
+    expect(rememberBuildNumber(undefined)).toBe(false);
+    expect(rememberBuildNumber({})).toBe(false);
+    expect(rememberBuildNumber({ "k-ruoka-build": "b-1; drop" })).toBe(false);
+    expect(getBuildNumber()).toBe("32769");
+  });
+
+  it("goes back to the bootstrap once invalidated", () => {
+    rememberBuildNumber({ "k-ruoka-build": "32769" });
+    invalidateBuildNumber();
+    expect(getBuildNumber()).toBe(BOOTSTRAP_BUILD_NUMBER);
   });
 });
 
-describe("getBuildNumber", () => {
-  const page = (build: string) => ({
+describe("KRuokaClient build handshake", () => {
+  const ok = (build: string): TransportResponse => ({
     status: 200,
-    body: `<script src="/assets/b-${build}/bundle.js"></script>`,
+    body: JSON.stringify({ result: [] }),
+    headers: { "k-ruoka-build": build },
+  });
+  const stale = (build: string | null): TransportResponse => ({
+    status: 409,
+    body: JSON.stringify({ error: { message: "Client version is too old - reload" } }),
+    ...(build ? { headers: { "k-ruoka-build": build } } : {}),
   });
 
-  it("fetches and returns the current build", async () => {
-    expect(await getBuildNumber(async () => page("32654"))).toBe("32654");
-  });
-
-  it("caches, so every search does not refetch a three-megabyte page", async () => {
-    let calls = 0;
-    const fetcher = async () => {
-      calls += 1;
-      return page("32654");
+  function recordingClient(responses: TransportResponse[]) {
+    const sent: string[] = [];
+    const transport = async (_url: string, options?: TransportRequest) => {
+      sent.push(options?.headers?.["X-K-Build-Number"] ?? "(none)");
+      const next = responses.shift();
+      if (!next) throw new Error("unexpected request");
+      return next;
     };
+    return { sent, client: new KRuokaClient({ transport, minIntervalMs: 0 }) };
+  }
 
-    await getBuildNumber(fetcher);
-    await getBuildNumber(fetcher);
+  it("learns the build from a successful response and sends it next time", async () => {
+    const { sent, client } = recordingClient([ok("32769"), ok("32769")]);
 
-    expect(calls).toBe(1);
+    await client.searchProducts("maito");
+    await client.searchProducts("leipä");
+
+    expect(sent).toEqual([BOOTSTRAP_BUILD_NUMBER, "32769"]);
   });
 
-  // On a cold start several searches arrive at once; they should share one
-  // request rather than each fetching the storefront.
-  it("shares one in-flight request between concurrent callers", async () => {
-    let calls = 0;
-    const fetcher = async () => {
-      calls += 1;
-      await new Promise((r) => setTimeout(r, 20));
-      return page("32654");
-    };
+  it("retries once with the build a 409 reports", async () => {
+    const { sent, client } = recordingClient([stale("32800"), ok("32800")]);
 
-    await Promise.all([getBuildNumber(fetcher), getBuildNumber(fetcher), getBuildNumber(fetcher)]);
+    await client.searchProducts("maito");
 
-    expect(calls).toBe(1);
+    expect(sent).toEqual([BOOTSTRAP_BUILD_NUMBER, "32800"]);
   });
 
-  it("re-reads after being invalidated by a stale-version response", async () => {
-    let build = "32654";
-    const fetcher = async () => page(build);
+  it("does not loop when the API keeps refusing", async () => {
+    const { sent, client } = recordingClient([stale(null), stale(null)]);
 
-    expect(await getBuildNumber(fetcher)).toBe("32654");
-    build = "32700";
-    invalidateBuildNumber();
-    expect(await getBuildNumber(fetcher)).toBe("32700");
-  });
-
-  it("throws when the storefront cannot be read", async () => {
-    await expect(getBuildNumber(async () => ({ status: 403, body: "" }))).rejects.toThrow(/403/);
-  });
-
-  it("throws when the markup carries no build number", async () => {
-    await expect(
-      getBuildNumber(async () => ({ status: 200, body: "<html></html>" })),
-    ).rejects.toThrow(/no build number/);
-  });
-
-  it("does not cache a failure", async () => {
-    let fail = true;
-    const fetcher = async () => (fail ? { status: 500, body: "" } : page("32654"));
-
-    await expect(getBuildNumber(fetcher)).rejects.toThrow();
-    fail = false;
-    expect(await getBuildNumber(fetcher)).toBe("32654");
+    await expect(client.searchProducts("maito")).rejects.toThrow(/409/);
+    expect(sent).toHaveLength(2);
   });
 });

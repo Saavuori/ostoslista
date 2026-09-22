@@ -78,6 +78,9 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${REPO}@${{ steps.push.outputs.digest }}"
           echo "Testing $IMAGE"
 
+          # Product search depends on curl being in the runtime image.
+          docker run --rm --entrypoint curl "$IMAGE" --version
+
           docker run -d --name smoke -p 3000:3000 \
             -e DATABASE_URL=postgres://unused:unused@127.0.0.1:5432/unused \
             "$IMAGE"

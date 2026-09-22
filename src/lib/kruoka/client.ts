@@ -1,4 +1,4 @@
-import { getBuildNumber, invalidateBuildNumber } from "./buildNumber";
+import { getBuildNumber, invalidateBuildNumber, rememberBuildNumber } from "./buildNumber";
 import { normalizeSearchResponse } from "./normalize";
 import { request, type TransportRequest, type TransportResponse } from "./transport";
 import type { Product } from "./types";
@@ -12,9 +12,10 @@ import type { Product } from "./types";
  * Two things are required to get a useful answer, and both were discovered
  * from the API's own error responses:
  *
- * 1. `X-K-Build-Number`, the storefront's current build. Without it the API
- *    replies 409 "Client version is too old - reload". It is discovered from
- *    the storefront markup and refreshed when the API says it is stale.
+ * 1. `X-K-Build-Number`, the storefront's current build. Without the header
+ *    Cloudflare answers with a challenge; with a stale value the API may reply
+ *    409 "Client version is too old - reload". The current value arrives in
+ *    every response's `k-ruoka-build` header — see `buildNumber.ts`.
  * 2. A request made by curl rather than Node's fetch — see `transport.ts`.
  *
  * Even so, treat this as a liability: it is undocumented and unversioned, and
@@ -88,18 +89,13 @@ export class KRuokaClient {
     return run;
   }
 
-  private async buildNumber(): Promise<string> {
-    if (this.fixedBuildNumber) return this.fixedBuildNumber;
-    return getBuildNumber((url) => this.transport(url, { timeoutMs: this.timeoutMs }));
-  }
-
   /**
-   * Issues one call, refreshing the build number once if the API reports it is
-   * stale. A deploy happens mid-session sooner or later, and one retry turns
-   * that from an outage into a hiccup.
+   * Issues one call, retrying once with the build number the API reports if it
+   * says ours is stale. A deploy happens mid-session sooner or later, and one
+   * retry turns that from an outage into a hiccup.
    */
   private async call(path: string, retriedAfterVersionBump = false): Promise<unknown> {
-    const build = await this.buildNumber();
+    const build = this.fixedBuildNumber ?? getBuildNumber();
 
     const response = await this.transport(`${BASE_URL}${path}`, {
       method: "POST",
@@ -113,10 +109,14 @@ export class KRuokaClient {
       },
     });
 
+    const learned = !this.fixedBuildNumber && rememberBuildNumber(response.headers);
+
     if (response.status === 409 && !retriedAfterVersionBump) {
       const message = safeErrorMessage(response.body);
       if (message?.includes("Client version is too old")) {
-        invalidateBuildNumber();
+        // Without a reported value, fall back to the bootstrap rather than
+        // resending the one just refused.
+        if (!learned) invalidateBuildNumber();
         return this.call(path, true);
       }
     }

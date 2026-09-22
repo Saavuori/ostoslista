@@ -23,6 +23,8 @@ export const USER_AGENT =
 export interface TransportResponse {
   status: number;
   body: string;
+  /** Final response's headers, lower-cased names, first value of each. */
+  headers?: Record<string, string>;
 }
 
 export interface TransportRequest {
@@ -71,9 +73,10 @@ export async function request(
     "--compressed",
     "--user-agent",
     USER_AGENT,
-    // Body, then a separator, then the status code.
+    // Body, then the headers as JSON, then the status code.
     "--write-out",
-    "\\n__STATUS__%{http_code}",
+    // curl expands the `\n` escapes itself. `header_json` needs curl 7.83+.
+    "\\n__HEADERS__%{header_json}\\n__STATUS__%{http_code}",
   ];
 
   for (const [name, value] of Object.entries(options.headers ?? {})) {
@@ -99,15 +102,46 @@ export async function request(
     throw new TransportError(`request failed: ${url}`, cause);
   }
 
-  const marker = stdout.lastIndexOf("\n__STATUS__");
-  if (marker === -1) {
+  const parsed = parseCurlOutput(stdout);
+  if (!parsed) {
     throw new TransportError(`malformed response for ${url}`);
   }
+  return parsed;
+}
 
-  return {
-    body: stdout.slice(0, marker),
-    status: Number.parseInt(stdout.slice(marker + "\n__STATUS__".length), 10),
-  };
+const HEADERS_MARKER = "\n__HEADERS__";
+const STATUS_MARKER = "\n__STATUS__";
+
+/**
+ * Splits curl's stdout into body, headers and status.
+ *
+ * Searched from the end, so a body that happens to contain a marker cannot
+ * confuse it. Headers are optional: an unparseable block is dropped rather
+ * than failing a response whose body is fine.
+ */
+export function parseCurlOutput(stdout: string): TransportResponse | null {
+  const statusAt = stdout.lastIndexOf(STATUS_MARKER);
+  if (statusAt === -1) return null;
+
+  const status = Number.parseInt(stdout.slice(statusAt + STATUS_MARKER.length), 10);
+  const headersAt = stdout.lastIndexOf(HEADERS_MARKER, statusAt);
+  if (headersAt === -1) return { body: stdout.slice(0, statusAt), status };
+
+  const headers: Record<string, string> = {};
+  try {
+    const raw = JSON.parse(stdout.slice(headersAt + HEADERS_MARKER.length, statusAt)) as Record<
+      string,
+      unknown
+    >;
+    for (const [name, value] of Object.entries(raw)) {
+      const first = Array.isArray(value) ? value[0] : value;
+      if (typeof first === "string") headers[name.toLowerCase()] = first;
+    }
+  } catch {
+    // Headers are a bonus; the body and status are what callers depend on.
+  }
+
+  return { body: stdout.slice(0, headersAt), status, headers };
 }
 
 /** True when curl is available, which the whole integration depends on. */

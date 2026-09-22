@@ -1,76 +1,50 @@
-import { request, type TransportResponse } from "./transport";
-
 /**
  * The client build number K-Ruoka's API requires.
  *
- * Requests without it are answered:
+ * Every API response carries the current value in a `k-ruoka-build` header,
+ * so it is learned from the API itself and remembered here. A stale value is
+ * currently accepted; if the API starts refusing one, it answers
  *
  *   409 {"error":{"message":"Client version is too old - reload"}}
  *
- * The storefront serves its assets from `/assets/b-<number>/`, so the current
- * value is read from there — the same way the browser learns it. It changes on
- * every deploy, which is why it is discovered rather than hard-coded, cached
- * for a while, and re-read whenever the API says it is stale.
+ * with the current value in that same header, and the client retries once.
+ *
+ * The header must be present at all: requests without it are answered with a
+ * Cloudflare challenge. The storefront HTML — where this used to be scraped
+ * from `/assets/b-<number>/` — is challenged for every scripted client, so it
+ * cannot be the source any more.
  */
 
-const STOREFRONT = "https://www.k-ruoka.fi/kauppa/tuotehaku";
-const BUILD_PATTERN = /\/assets\/b-(\d+)\//;
+/** Sent until a response has told us the real value. Any number is accepted. */
+export const BOOTSTRAP_BUILD_NUMBER = "0";
 
-/** Long enough to avoid refetching constantly, short enough to follow deploys. */
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const HEADER = "k-ruoka-build";
+const VALID = /^\d{1,10}$/;
 
-interface Cached {
-  value: string;
-  at: number;
+let current: string | null = null;
+
+/** The value to send: the last one the API reported, or the bootstrap. */
+export function getBuildNumber(): string {
+  return current ?? BOOTSTRAP_BUILD_NUMBER;
 }
-
-let cache: Cached | null = null;
-let inFlight: Promise<string> | null = null;
-
-export function extractBuildNumber(html: string): string | null {
-  return html.match(BUILD_PATTERN)?.[1] ?? null;
-}
-
-type Fetcher = (url: string) => Promise<TransportResponse>;
-
-const defaultFetcher: Fetcher = (url) => request(url, { timeoutMs: 20_000 });
 
 /**
- * Returns the current build number, fetching it at most once at a time.
- *
- * Concurrent callers share one request: on a cold start several searches can
- * arrive together, and they should not each fetch a three-megabyte page.
+ * Records the build number from a response's headers, if it carries one.
+ * Returns true when a usable value was found.
  */
-export async function getBuildNumber(fetcher: Fetcher = defaultFetcher): Promise<string> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
-  if (inFlight) return inFlight;
-
-  inFlight = (async () => {
-    try {
-      const response = await fetcher(STOREFRONT);
-      if (response.status !== 200) {
-        throw new Error(`storefront returned ${response.status}`);
-      }
-
-      const value = extractBuildNumber(response.body);
-      if (!value) throw new Error("no build number in the storefront markup");
-
-      cache = { value, at: Date.now() };
-      return value;
-    } finally {
-      inFlight = null;
-    }
-  })();
-
-  return inFlight;
+export function rememberBuildNumber(headers: Record<string, string> | undefined): boolean {
+  const value = headers?.[HEADER]?.trim();
+  if (!value || !VALID.test(value)) return false;
+  current = value;
+  return true;
 }
 
-/** Forces a re-read. Called when the API reports the version is stale. */
+/** Forgets the remembered value. Called when the API reports it is stale. */
 export function invalidateBuildNumber(): void {
-  cache = null;
+  current = null;
 }
 
 /** Test helper. */
 export function primeBuildNumber(value: string): void {
-  cache = { value, at: Date.now() };
+  current = value;
 }
