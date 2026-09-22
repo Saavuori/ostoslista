@@ -127,3 +127,60 @@ export async function readCachedList(token: string): Promise<StoredList | undefi
   if (!db) return undefined;
   return db.lists.get(token);
 }
+
+/** A list this device has opened, with enough counts for the home page. */
+export interface SavedList extends StoredList {
+  /** Items still to buy. */
+  remaining: number;
+  /** All live items. */
+  total: number;
+  /** Local changes the server has not confirmed yet. */
+  unsynced: number;
+}
+
+/**
+ * Every list this device knows about, most recently used first.
+ *
+ * There are no accounts, so "my lists" is simply what this browser has
+ * opened; `cachedAt` moves whenever the list is viewed or edited here.
+ */
+export async function readSavedLists(): Promise<SavedList[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const [lists, items, outbox] = await Promise.all([
+    db.lists.toArray(),
+    db.items.toArray(),
+    db.outbox.toArray(),
+  ]);
+
+  return lists
+    .map((list) => {
+      const live = items.filter((item) => item.token === list.token && !item.deletedAt);
+      return {
+        ...list,
+        total: live.length,
+        remaining: live.filter((item) => !item.checked).length,
+        unsynced: outbox.filter((entry) => entry.token === list.token).length,
+      };
+    })
+    .sort((a, b) => b.cachedAt.getTime() - a.cachedAt.getTime());
+}
+
+/**
+ * Removes a list from this device only.
+ *
+ * The list itself stays on the server: anyone else holding the link still has
+ * it, and opening the link again brings it back here. Unsent changes for it
+ * are dropped with it, which is why the UI warns when there are any.
+ */
+export async function forgetList(token: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  await db.transaction("rw", db.lists, db.items, db.outbox, async () => {
+    await db.lists.delete(token);
+    await db.items.where("token").equals(token).delete();
+    await db.outbox.where("token").equals(token).delete();
+  });
+}
