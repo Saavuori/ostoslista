@@ -10,6 +10,32 @@ must be green before the next phase begins.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-buy totals.** A "2 kpl 4,50 €" offer only applies to whole bundles,
+  but list totals multiplied its per-unit share by the quantity, so buying one
+  showed 2,25 € instead of the shelf price 2,39 €. Rows now snapshot the
+  single-unit price and totals go through `lineTotalCents()`. Rows added
+  before this keep their old snapshot and can still under-report a remainder.
+- **Writes had no author.** The list view never had a member id, so
+  `checkedBy` stayed empty, last-write-wins tie-breaks compared empty strings,
+  and no device could recognise the echo of its own change. Each tab now
+  carries an id (sessionStorage, so two tabs never ignore each other).
+- **Missed live updates after a restart.** Event ids restarted at zero, so a
+  phone reconnecting after a deploy sent an id that looked like the future and
+  was replayed nothing — the edits made while it was away never arrived. Ids
+  are now seeded from the clock, and replay returns "refetch" whenever it
+  cannot vouch for the history: after a restart, after the list's buffer was
+  released, or after edits landed while nobody was listening. The presence
+  update sent as the last viewer left also no longer re-creates that buffer.
+- **Deleted rows coming back.** Deleting a row whose offline creation was
+  still in flight cancelled both from the outbox; the creation landed and the
+  row returned on the next sync. The delete is now always sent as a
+  tombstone, and a flush no longer re-shows rows with a delete still queued.
+- `DELETE …/items/:id?by=` rejects a malformed member id with a 400 instead of
+  a database error.
+- Removed `ld.json`, a stray Kesko product record committed by accident.
+
 ### List rows carry what the search result showed
 
 Previously a product went into the list as a name and a price, and everything

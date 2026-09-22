@@ -96,12 +96,20 @@ describe("collapse", () => {
       expect(result[0]?.op).toBe("delete");
     });
 
-    // The server never heard of this row, so there is nothing to tell it.
-    it("cancels a pending creation entirely", () => {
+    /**
+     * The creation may already be in flight. Cancelling both would let it
+     * land on the server with nothing left to remove it, and the next sync
+     * would bring the deleted row back.
+     */
+    it("replaces a pending creation with a tombstone", () => {
       const create = entry({ op: "create", patch: { freeText: "Maito" } });
       const remove = entry({ op: "delete" });
 
-      expect(collapse(create, remove)).toEqual([]);
+      const result = collapse(create, remove);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.op).toBe("delete");
+      expect(toSyncPayload(result, MEMBER).items[0]?.deletedAt).toBeTruthy();
     });
   });
 

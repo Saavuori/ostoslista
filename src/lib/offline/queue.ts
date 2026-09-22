@@ -86,17 +86,28 @@ export async function flush(token: string, memberId: string | null): Promise<Flu
 
     const body = (await response.json()) as { items: ItemView[] };
 
-    await db.transaction("rw", db.items, db.outbox, async () => {
+    const items = await db.transaction("rw", db.items, db.outbox, async () => {
       // Only clear what was actually sent — a change made while the request
       // was in flight must survive.
       for (const entry of entries) {
         if (entry.seq !== undefined) await db.outbox.delete(entry.seq);
       }
+
+      // A row deleted while this request was in flight is still in the reply.
+      // Its tombstone goes out with the next flush; until then, showing the
+      // server's copy would make the deletion visibly undo itself.
+      const stillQueued = await db.outbox.where("token").equals(token).toArray();
+      const deleting = new Set(
+        stillQueued.filter((entry) => entry.op === "delete").map((entry) => entry.itemId),
+      );
+      const visible = body.items.filter((item) => !deleting.has(item.id));
+
       await db.items.where("token").equals(token).delete();
-      await db.items.bulkPut(body.items.map((item) => ({ ...item, token })));
+      await db.items.bulkPut(visible.map((item) => ({ ...item, token })));
+      return visible;
     });
 
-    return { sent: entries.length, items: body.items, abandoned: 0 };
+    return { sent: entries.length, items, abandoned: 0 };
   } catch {
     let abandoned = 0;
     await db.transaction("rw", db.outbox, async () => {

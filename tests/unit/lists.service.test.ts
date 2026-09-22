@@ -580,6 +580,36 @@ describe("syncItems", () => {
       expect(second).toHaveLength(1);
     });
 
+    /**
+     * A row deleted while its offline creation was still in flight: the
+     * creation lands, then the tombstone that replaced it in the outbox
+     * follows in the next flush and must remove it.
+     */
+    it("removes a row created in an earlier flush when its tombstone follows", async () => {
+      const { token } = await seedList();
+      const id = uuidv7();
+      const createdAt = new Date(Date.now() - 1000);
+
+      await syncItems(token, {
+        items: [{ id, freeText: "Maito", qty: 1, updatedAt: createdAt }],
+      });
+      const items = await syncItems(token, {
+        items: [{ id, deletedAt: new Date(), updatedAt: new Date(), updatedBy: ALICE }],
+      });
+
+      expect(items).toHaveLength(0);
+    });
+
+    it("ignores a tombstone for a row the server never received", async () => {
+      const { token } = await seedList();
+
+      const items = await syncItems(token, {
+        items: [{ id: uuidv7(), deletedAt: new Date(), updatedAt: new Date() }],
+      });
+
+      expect(items).toHaveLength(0);
+    });
+
     // Otherwise a queued edit that arrives after a delete resurrects the row.
     it("does not insert a row from a creation that was also deleted", async () => {
       const { token } = await seedList();

@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemView } from "@/lib/lists/service";
-import { type Envelope, publish, replaySince, resetBus, subscribe, subscriberCount } from "./bus";
+import {
+  currentSequence,
+  type Envelope,
+  publish,
+  replaySince,
+  resetBus,
+  subscribe,
+  subscriberCount,
+} from "./bus";
 
 const item = (id: string): ItemView => ({
   id,
@@ -31,8 +39,16 @@ const item = (id: string): ItemView => ({
 });
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   resetBus();
 });
+
+/** A restart, which in reality is never within the same millisecond. */
+function restartLater() {
+  const later = Date.now() + 5_000;
+  vi.spyOn(Date, "now").mockReturnValue(later);
+  resetBus();
+}
 
 describe("subscribe and publish", () => {
   it("delivers an event to a subscriber of that list", async () => {
@@ -126,7 +142,15 @@ describe("unsubscribe", () => {
     off();
 
     expect(subscriberCount("list-a")).toBe(0);
-    expect(replaySince("list-a", 0)).toEqual([]);
+  });
+
+  // The presence update sent as the last viewer leaves used to re-create it.
+  it("does not re-create a bucket by publishing to a list nobody watches", async () => {
+    await publish("list-a", { type: "presence", count: 0 });
+    const seen = currentSequence();
+
+    expect(replaySince("list-a", seen)).toEqual([]);
+    expect(subscriberCount("list-a")).toBe(0);
   });
 
   it("is safe to call twice", () => {
@@ -138,25 +162,42 @@ describe("unsubscribe", () => {
 
 describe("replaySince", () => {
   it("returns only events newer than the supplied id", async () => {
-    subscribe("list-a", () => {});
+    const received: Envelope[] = [];
+    subscribe("list-a", (e) => received.push(e));
     await publish("list-a", { type: "item.removed", itemId: "a" });
     await publish("list-a", { type: "item.removed", itemId: "b" });
     await publish("list-a", { type: "item.removed", itemId: "c" });
 
-    const missed = replaySince("list-a", 1);
+    const missed = replaySince("list-a", received[0]!.id);
 
-    expect(missed?.map((e) => e.id)).toEqual([2, 3]);
+    expect(missed?.map((e) => e.id)).toEqual([received[1]!.id, received[2]!.id]);
   });
 
   it("returns nothing when the client is already current", async () => {
     subscribe("list-a", () => {});
     await publish("list-a", { type: "item.removed", itemId: "a" });
 
-    expect(replaySince("list-a", 1)).toEqual([]);
+    expect(replaySince("list-a", currentSequence())).toEqual([]);
   });
 
-  it("returns an empty list for a list with no history", () => {
-    expect(replaySince("unknown", 0)).toEqual([]);
+  it("returns an empty list when nothing has happened since", () => {
+    expect(replaySince("unknown", currentSequence())).toEqual([]);
+  });
+
+  // Ids are global, so events on other lists are not a gap in this one.
+  it("does not ask for a refetch because other lists were busy", async () => {
+    subscribe("list-a", () => {});
+    subscribe("list-b", () => {});
+    await publish("list-a", { type: "item.removed", itemId: "a" });
+    const seen = currentSequence();
+    for (let i = 0; i < 5; i++) {
+      await publish("list-b", { type: "item.removed", itemId: String(i) });
+    }
+    await publish("list-a", { type: "item.removed", itemId: "b" });
+
+    expect(replaySince("list-a", seen)?.map((e) => e.event)).toEqual([
+      { type: "item.removed", itemId: "b" },
+    ]);
   });
 
   /**
@@ -165,12 +206,13 @@ describe("replaySince", () => {
    * history that would leave the list quietly wrong.
    */
   it("signals that a refetch is needed when the gap is too large", async () => {
-    subscribe("list-a", () => {});
+    const received: Envelope[] = [];
+    subscribe("list-a", (e) => received.push(e));
     for (let i = 0; i < 60; i++) {
       await publish("list-a", { type: "item.removed", itemId: String(i) });
     }
 
-    expect(replaySince("list-a", 1)).toBeNull();
+    expect(replaySince("list-a", received[0]!.id)).toBeNull();
   });
 
   it("caps the buffer rather than growing without bound", async () => {
@@ -179,6 +221,62 @@ describe("replaySince", () => {
       await publish("list-a", { type: "item.removed", itemId: String(i) });
     }
 
-    expect(replaySince("list-a", 199)?.length).toBe(1);
+    expect(replaySince("list-a", currentSequence() - 1)?.length).toBe(1);
+  });
+
+  /**
+   * The phone that slept through a deploy: it reconnects with an id from the
+   * previous process. Answering "nothing missed" would lose every edit made
+   * while it was away.
+   */
+  it("asks for a refetch after a restart", async () => {
+    subscribe("list-a", () => {});
+    await publish("list-a", { type: "item.removed", itemId: "a" });
+    const beforeRestart = currentSequence();
+
+    restartLater();
+    subscribe("list-a", () => {});
+    await publish("list-a", { type: "item.removed", itemId: "b" });
+
+    expect(currentSequence()).toBeGreaterThan(beforeRestart);
+    expect(replaySince("list-a", beforeRestart)).toBeNull();
+  });
+
+  it("asks for a refetch after a restart even when nothing has been published", () => {
+    const beforeRestart = currentSequence();
+    restartLater();
+
+    expect(replaySince("list-a", beforeRestart)).toBeNull();
+  });
+
+  it("asks for a refetch for an id this process never issued", () => {
+    expect(replaySince("list-a", currentSequence() + 10)).toBeNull();
+  });
+
+  /**
+   * The last viewer's connection drops, an edit lands while nobody is
+   * listening, and that viewer reconnects. The edit was never buffered.
+   */
+  it("asks for a refetch when edits happened while nobody was listening", async () => {
+    const off = subscribe("list-a", () => {});
+    await publish("list-a", { type: "item.removed", itemId: "a" });
+    const seen = currentSequence();
+    off();
+
+    await publish("list-a", { type: "item.removed", itemId: "b" });
+
+    expect(replaySince("list-a", seen)).toBeNull();
+  });
+
+  it("asks for a refetch when the bucket holding missed events was released", async () => {
+    const off = subscribe("list-a", () => {});
+    await publish("list-a", { type: "item.removed", itemId: "a" });
+    const seen = currentSequence();
+    await publish("list-a", { type: "item.removed", itemId: "b" });
+    off();
+
+    subscribe("list-a", () => {});
+
+    expect(replaySince("list-a", seen)).toBeNull();
   });
 });

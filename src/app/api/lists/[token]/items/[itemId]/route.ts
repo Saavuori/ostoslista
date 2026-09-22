@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { handle, readJson } from "@/lib/http";
 import { deleteItem, updateItem } from "@/lib/lists/service";
 import { updateItemSchema } from "@/lib/lists/validation";
@@ -16,6 +17,7 @@ export const PATCH = handle(async (request: Request, { params }: Params) => {
 
 export const DELETE = handle(async (request: Request, { params }: Params) => {
   const { token, itemId } = await params;
-  const by = new URL(request.url).searchParams.get("by");
+  // Stored in a uuid column: a malformed value must be a 400, not a database error.
+  const by = z.string().uuid().nullable().parse(new URL(request.url).searchParams.get("by"));
   return NextResponse.json(await deleteItem(token, itemId, by));
 });
