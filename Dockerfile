@@ -36,6 +36,11 @@ ENV NODE_ENV=production \
 # user namespace rather than to a real host uid.
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs -G nodejs
 
+# The K-Ruoka transport shells out to curl (see src/lib/kruoka/transport.ts),
+# and node:alpine does not ship it. Without it every product search fails with
+# `spawn curl ENOENT` and silently degrades to the empty local index.
+RUN apk add --no-cache curl
+
 # `output: "standalone"` emits a server bundle with only the modules it needs.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static

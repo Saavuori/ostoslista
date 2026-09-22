@@ -112,17 +112,21 @@ product API. Things that follow from that:
 - **Two things are required to get a useful answer.** Both came from the API's
   own error responses, not from guessing.
 
-  1. **`X-K-Build-Number`.** Without it the API replies
-     `409 {"error":{"message":"Client version is too old - reload"}}`. The
-     storefront serves its assets from `/assets/b-<number>/`, so the current
-     value is read from there and refreshed automatically when the API reports
-     it is stale — see `buildNumber.ts`. It changes on every deploy, so never
-     hard-code it.
+  1. **`X-K-Build-Number`.** Requests without the header get a Cloudflare
+     challenge (`403`); with a stale value the API may reply
+     `409 {"error":{"message":"Client version is too old - reload"}}`. Every
+     API response — 200 and 409 alike — carries the current value in a
+     `k-ruoka-build` header, so `buildNumber.ts` learns it from there, starting
+     from a bootstrap value. It changes on every deploy, so never hard-code it.
+     Do **not** go back to scraping `/assets/b-<number>/` from the storefront
+     HTML: as of 2026-09 every storefront page is challenged for scripted
+     clients (from home and datacenter IPs alike), while the API is not.
   2. **curl, not Node's `fetch`.** Node's client is answered with a Cloudflare
      challenge page on this domain; curl is served normally. `transport.ts`
      shells out via `execFile` with an argument array — there is no shell, so a
      product name full of quotes and semicolons is an argument and nothing
-     else. Requests outside `https://www.k-ruoka.fi` are refused.
+     else. Requests outside `https://www.k-ruoka.fi` are refused. The runtime
+     image installs curl explicitly (`node:alpine` has none); CI checks it.
 
   **What this is not.** No challenge is solved, no stealth browser is used, and
   no TLS fingerprint is forged. curl presents its own, and the User-Agent
