@@ -34,6 +34,26 @@ test.describe("making a list", () => {
   });
 });
 
+test.describe("my lists", () => {
+  test("shows lists opened on this device and removes one from it", async ({ page }) => {
+    const url = await createList(page, "Mökkireissu");
+
+    await page.getByRole("link", { name: "‹ Omat listat" }).click();
+    await page.waitForURL(/\/$/);
+
+    const saved = page.getByRole("region", { name: "Omat listat" });
+    await expect(saved.getByRole("link", { name: /Mökkireissu/ })).toBeVisible();
+
+    await saved.getByRole("button", { name: "Poista Mökkireissu" }).click();
+    await saved.getByRole("button", { name: "Poista", exact: true }).click();
+    await expect(saved.getByRole("link", { name: /Mökkireissu/ })).toHaveCount(0);
+
+    // Only forgotten locally: the link still works and brings it back.
+    await page.goto(url);
+    await expect(page.getByRole("heading", { name: "Mökkireissu" })).toBeVisible();
+  });
+});
+
 test.describe("items", () => {
   test("adds a free-text item and keeps focus for the next one", async ({ page }) => {
     await createList(page, "Kauppa");

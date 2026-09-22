@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import { AddItemBar } from "@/components/AddItemBar";
 import { HistoryChips } from "@/components/HistoryChips";
@@ -377,6 +378,9 @@ export function ListView({ list, shareUrl }: Props) {
       <header className="sticky top-0 z-10 border-b border-rule bg-paper/95 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            <Link href="/" className="eyebrow -my-1 inline-block py-1 active:text-signal">
+              ‹ Omat listat
+            </Link>
             <h1 className="truncate text-xl font-bold tracking-tight text-ink">{list.name}</h1>
             <p className="tabular mt-0.5 text-xs text-ink-faint">
               {pending.length > 0

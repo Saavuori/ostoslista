@@ -1,4 +1,5 @@
 import { CreateListForm } from "@/components/CreateListForm";
+import { SavedLists } from "@/components/SavedLists";
 
 export default function HomePage() {
   return (
@@ -39,6 +40,7 @@ export default function HomePage() {
         </ul>
       </div>
 
+      <SavedLists />
       <CreateListForm />
     </main>
   );
