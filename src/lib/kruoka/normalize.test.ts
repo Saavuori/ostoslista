@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../../../tests/fixtures/kruoka-search.json";
+import { aisleOrderForSlug } from "./aisles";
 import { lineTotal, normalizeProduct, normalizeSearchResponse } from "./normalize";
 import type { Product } from "./types";
 
@@ -29,7 +30,9 @@ describe("product fields", () => {
     expect(soup.nameSv).toBe("Saarioinen regnbågslaxsoppa 300g");
     expect(soup.brand).toBe("Saarioinen");
     expect(soup.categoryPath).toBe("valmisruoka/valmisruoat-ja--keitot/mikrokeitot");
-    expect(soup.categoryName).toBe("Mikrokeitot");
+    // The department, not the leaf "Mikrokeitot": shopping mode groups by it.
+    expect(soup.categoryName).toBe("Valmisruoka");
+    expect(soup.categoryOrder).toBe(aisleOrderForSlug("valmisruoka"));
     expect(soup.section).toBe("1304");
     expect(soup.imageUrl).toBe("https://public.keskofiles.com/f/k-ruoka/product/6412000031849");
     expect(soup.originCountry).toBe("fi");
