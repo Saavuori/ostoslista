@@ -354,6 +354,15 @@ describe("updateItem", () => {
       status: 404,
     });
   });
+
+  // The id lands in a uuid column; a malformed one must be a 404, not a 500.
+  it("treats a malformed item id as not found", async () => {
+    const { token } = await seedList();
+    await expect(updateItem(token, "not-a-uuid", { qty: 2 })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(deleteItem(token, "not-a-uuid")).rejects.toMatchObject({ status: 404 });
+  });
 });
 
 describe("deleteItem", () => {
@@ -542,6 +551,22 @@ describe("syncItems", () => {
       expect(items[0]?.id).toBe(id);
       expect(items[0]?.freeText).toBe("Maito");
       expect(items[0]?.qty).toBe(2);
+    });
+
+    it("records who checked off a row that was created and ticked offline", async () => {
+      const { token } = await seedList();
+      const at = new Date(Date.now() - 60_000);
+
+      const [item] = await syncItems(token, {
+        memberId: ALICE,
+        items: [
+          { id: uuidv7(), freeText: "Maito", checked: true, updatedAt: at, updatedBy: ALICE },
+        ],
+      });
+
+      expect(item?.checked).toBe(true);
+      expect(item?.checkedBy).toBe(ALICE);
+      expect(item?.checkedAt?.getTime()).toBe(at.getTime());
     });
 
     it("inserts a catalogue product with its snapshots intact", async () => {
