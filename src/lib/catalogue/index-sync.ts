@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
 import { crawlProductIndex, type IndexEntry } from "@/lib/kruoka/sitemap";
+import { foldFinnish } from "@/lib/text";
 
 /**
  * Populates the local product index from K-Ruoka's sitemaps.
@@ -34,7 +35,8 @@ export async function upsertEntries(entries: IndexEntry[], batchSize = 500): Pro
           ean: entry.ean,
           name: entry.name,
           slug: entry.slug,
-          searchName: entry.name.toLowerCase(),
+          // Folded exactly as queries are, or "leipa" would miss "leipä".
+          searchName: foldFinnish(entry.name),
         })),
       )
       .onConflictDoUpdate({

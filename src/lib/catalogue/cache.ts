@@ -5,7 +5,7 @@ import { type KRuokaClient, kruoka } from "@/lib/kruoka/client";
 import { toCents } from "@/lib/kruoka/normalize";
 import { fetchProductBySlug } from "@/lib/kruoka/productPage";
 import type { Product as UpstreamProduct } from "@/lib/kruoka/types";
-import { normalizeQuery } from "@/lib/text";
+import { foldFinnish, normalizeQuery } from "@/lib/text";
 
 /**
  * The catalogue cache.
@@ -142,6 +142,9 @@ async function persist(items: UpstreamProduct[], storeId: string): Promise<void>
         shared.map((item) => ({
           ean: item.ean,
           name: item.name,
+          // Without it the product is invisible to the local-index fallback,
+          // which is the only search there is once upstream is unreachable.
+          searchName: foldFinnish(item.name),
           nameSv: item.nameSv,
           brand: item.brand,
           categoryPath: item.categoryPath,
@@ -162,6 +165,7 @@ async function persist(items: UpstreamProduct[], storeId: string): Promise<void>
         target: products.ean,
         set: {
           name: sql`excluded.name`,
+          searchName: sql`excluded.search_name`,
           brand: sql`excluded.brand`,
           categoryPath: sql`excluded.category_path`,
           categoryName: sql`excluded.category_name`,
