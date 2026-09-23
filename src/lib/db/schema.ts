@@ -153,6 +153,16 @@ export const listItems = pgTable(
     offerAmount: integer("offer_amount"),
     offerBundleCents: integer("offer_bundle_cents"),
 
+    /**
+     * Where this product sits in the list's own store: "hylly 06, taso 5".
+     * Filled in by the server after the item is added (see `lists/locate.ts`),
+     * which also replaces `aisleName`/`aisleOrder` with the store's department.
+     */
+    shelfModule: varchar("shelf_module", { length: 8 }),
+    shelfLevel: varchar("shelf_level", { length: 8 }),
+    /** When the store location was looked up; null means not yet tried. */
+    locatedAt: timestamp("located_at", { withTimezone: true }),
+
     /** Numeric, not integer: 0.4 kg of salmon is a valid quantity. */
     qty: numeric("qty", { precision: 10, scale: 3 }).notNull().default("1"),
     qtyUnit: varchar("qty_unit", { length: 8 }).notNull().default("kpl"),
@@ -297,6 +307,29 @@ export const storePrices = pgTable(
     uniqueIndex("store_prices_pk").on(table.ean, table.storeId),
     index("store_prices_stale_idx").on(table.fetchedAt),
   ],
+);
+
+/**
+ * Where a product sits in one store: department, shelf module and level.
+ *
+ * Per store, because every K-store has its own layout. Planograms change far
+ * less often than prices, so rows live for days rather than hours. A row with
+ * no department records that the store has no location for the product, so it
+ * is not asked again on every list load.
+ */
+export const storeLocations = pgTable(
+  "store_locations",
+  {
+    ean: varchar("ean", { length: 20 }).notNull(),
+    storeId: varchar("store_id", { length: 16 }).notNull(),
+    departmentName: varchar("department_name", { length: 120 }),
+    /** The store's own department sequence (Iso Omena: produce ~117 … beer 6). */
+    departmentOrder: integer("department_order"),
+    module: varchar("module", { length: 8 }),
+    level: varchar("level", { length: 8 }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("store_locations_pk").on(table.ean, table.storeId)],
 );
 
 export type Product = typeof products.$inferSelect;

@@ -151,6 +151,16 @@ product API. Things that follow from that:
 - **Never commit catalogue data.** This repo is public; the catalogue is
   Kesko's. `.gitignore` blocks `data/catalogue/` and `.cache/`.
 - **Hotlink images**, don't mirror them: `public.keskofiles.com/f/k-ruoka/...`.
+- **Store layout comes from a second endpoint.** Search results carry only the
+  web category tree. `GET /kr-api/v4/products/<ean>?storeId=` returns
+  `product.location`: the store's own department (`name`, `orderNumber`),
+  shelf `module` and `level` — the "Osasto / Hylly / Taso" panel on the product
+  page. `lists/locate.ts` fetches it once per product per store *after* an item
+  is added (never for search results), caches it in `store_locations` for a
+  week, and pushes the change as a live update. `orderNumber` runs from
+  produce (~117 at Iso Omena) down to beer (~6), so the walk is descending;
+  `storeAisleOrder()` negates it, which also sorts every store department ahead
+  of items that only have the web category (positive `aisleOrderForSlug`).
 
 ### The pricing model, which is the easiest thing to get wrong
 

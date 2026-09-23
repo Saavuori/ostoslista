@@ -100,6 +100,19 @@ export const DEPARTMENT_NAMES: Readonly<Record<string, string>> = {
   "vaatteet-ja-asusteet": "Vaatteet ja asusteet",
 };
 
+/**
+ * Aisle order for a department from the store's own layout.
+ *
+ * The store numbers its departments with fresh produce high (Iso Omena:
+ * "Hevi" ~117) and beer and household low (~6-30), so walking the shop means
+ * descending order — hence the negation. Negative also keeps every
+ * store-located group ahead of items that only have the web category
+ * (`aisleOrderForSlug`, 10…300), which are ordered on a different scale.
+ */
+export function storeAisleOrder(departmentOrder: number): number {
+  return -departmentOrder;
+}
+
 /** Department name for a slug or slug path, e.g. "pakasteet/jaatelot" -> "Pakasteet". */
 export function departmentNameForSlug(slug: string | null): string | null {
   if (!slug) return null;

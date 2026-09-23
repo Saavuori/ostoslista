@@ -67,7 +67,8 @@ export const createItemSchema = z
     nameSnapshot: z.string().trim().min(1).max(200).nullish(),
     priceCentsSnapshot: z.number().int().min(0).max(10_000_000).nullish(),
     aisleName: z.string().trim().min(1).max(120).nullish(),
-    aisleOrder: z.number().int().min(0).max(100_000).nullish(),
+    // Negative for store departments: see storeAisleOrder in kruoka/aisles.ts.
+    aisleOrder: z.number().int().min(-100_000).max(100_000).nullish(),
     imageUrl: z.string().url().max(400).nullish(),
     comparisonCents: z.number().int().min(0).max(10_000_000).nullish(),
     comparisonUnit: z.string().trim().max(8).nullish(),
@@ -122,7 +123,8 @@ export const syncSchema = z.object({
         nameSnapshot: z.string().trim().min(1).max(200).nullish(),
         priceCentsSnapshot: z.number().int().min(0).max(10_000_000).nullish(),
         aisleName: z.string().trim().min(1).max(120).nullish(),
-        aisleOrder: z.number().int().min(0).max(100_000).nullish(),
+        // Negative for store departments: see storeAisleOrder in kruoka/aisles.ts.
+        aisleOrder: z.number().int().min(-100_000).max(100_000).nullish(),
         imageUrl: z.string().url().max(400).nullish(),
         comparisonCents: z.number().int().min(0).max(10_000_000).nullish(),
         comparisonUnit: z.string().trim().max(8).nullish(),

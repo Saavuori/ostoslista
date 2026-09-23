@@ -17,6 +17,9 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+// Store-location lookups call K-Ruoka; they have their own tests.
+vi.mock("@/lib/lists/locate", () => ({ locateListItems: vi.fn(async () => 0) }));
+
 const { addItem, createList, deleteItem, getHistory, getList, syncItems, updateItem } =
   await import("@/lib/lists/service");
 const { listItems } = await import("@/lib/db/schema");

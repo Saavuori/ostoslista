@@ -36,6 +36,7 @@ interface Props {
  */
 export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Props) {
   const label = item.nameSnapshot ?? item.freeText ?? "Nimetön tuote";
+  const shelf = shelfLabel(item.shelfModule, item.shelfLevel);
   const lineCents = item.priceCentsSnapshot ? lineTotalCents(item) : null;
 
   // "2 kpl 4,50 €" is more actionable than a percentage: it says what to do.
@@ -112,6 +113,17 @@ export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Prop
               {formatQty(item.qty, item.qtyUnit)}
             </span>
 
+            {/* Where to reach for it — what the store's own product page shows. */}
+            {/* The level only when there is room: "hylly 04, ta…" helps nobody. */}
+            {shelf && !item.checked ? (
+              <span className="tabular shrink-0 text-xs text-ink-soft" title={shelf.full}>
+                · hylly {shelf.module}
+                {shelf.level ? (
+                  <span className="hidden @[24rem]:inline">, taso {shelf.level}</span>
+                ) : null}
+              </span>
+            ) : null}
+
             {/*
               Dropped rather than truncated when space is tight: "1,6…" tells
               nobody anything, and the badge beside it is worth more.
@@ -163,4 +175,22 @@ export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Prop
       </button>
     </li>
   );
+}
+
+/**
+ * Shelf and level, e.g. "hylly 06, taso 5". Some products carry a placeholder
+ * location of all zeros (seen on canned tomatoes and beer); that says
+ * nothing, so it is not shown.
+ */
+export function shelfLabel(
+  module: string | null,
+  level: string | null,
+): { module: string; level: string | null; full: string } | null {
+  if (!module || /^0+$/.test(module)) return null;
+  const shownLevel = level && !/^0+$/.test(level) ? level : null;
+  return {
+    module,
+    level: shownLevel,
+    full: shownLevel ? `hylly ${module}, taso ${shownLevel}` : `hylly ${module}`,
+  };
 }
