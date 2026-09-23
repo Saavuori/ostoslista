@@ -50,6 +50,6 @@ export async function readJson(request: Request): Promise<unknown> {
   try {
     return await request.json();
   } catch {
-    throw new (await import("@/lib/lists/service")).ListError("Virheellinen JSON", 400);
+    throw new ListError("Virheellinen JSON", 400);
   }
 }
