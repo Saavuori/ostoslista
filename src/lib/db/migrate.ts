@@ -3,8 +3,9 @@ import { createRequire } from "node:module";
 /**
  * Applies pending migrations, then exits.
  *
- * Runs at container start, in CI, and locally. Supports both drivers so a
- * developer running on PGlite migrates exactly the same SQL the server does.
+ * Runs as a deploy step, in CI, and locally — never on container start (see
+ * AGENTS.md). Supports both drivers so a developer running on PGlite migrates
+ * exactly the same SQL the server does.
  */
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -21,28 +22,31 @@ async function main(): Promise<void> {
     const dir = url.slice("pglite://".length) || ".data/dev";
     require("node:fs").mkdirSync(dir, { recursive: true });
 
-    // Constructed inside the try so a catchable open failure gets a useful
-    // message. Note that some failures — notably opening a directory another
-    // process already holds — abort inside the WASM runtime and cannot be
-    // caught at all; those surface as a raw `Aborted()` stack. If you see one,
-    // stop `npm run dev` (PGlite allows a single writer per directory), and if
-    // it persists the local database is disposable: delete `.data/dev`.
-    let client: { close: () => Promise<void> } | undefined;
+    // Some open failures — notably a directory another process already holds —
+    // abort inside the WASM runtime and cannot be caught at all; those surface
+    // as a raw `Aborted()` stack. If you see one, stop `npm run dev` (PGlite
+    // allows a single writer per directory), and if it persists the local
+    // database is disposable: delete `.data/dev`.
+    let client: { waitReady: Promise<void>; close: () => Promise<void> };
     try {
       client = new PGlite(dir);
-      await migrate(drizzle(client), { migrationsFolder: folder });
-      console.log("migrations applied (pglite)");
+      await client.waitReady;
     } catch (error) {
-      // PGlite allows a single writer per directory. A running dev server holds
-      // it, and the underlying failure is an opaque WASM abort, so say what is
-      // actually wrong.
+      // The catchable open failures, which are almost always the dev server
+      // holding the directory, so say what is actually wrong.
       throw new Error(
         `Could not open the PGlite database at ${dir}. It allows one process at ` +
           "a time — stop `npm run dev` and run this again. " +
           `Underlying error: ${String(error)}`,
       );
+    }
+
+    // A failing migration is reported as itself, not as a locked directory.
+    try {
+      await migrate(drizzle(client), { migrationsFolder: folder });
+      console.log("migrations applied (pglite)");
     } finally {
-      await client?.close();
+      await client.close();
     }
     return;
   }

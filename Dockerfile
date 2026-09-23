@@ -45,7 +45,8 @@ RUN apk add --no-cache curl
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
-# Migrations run on container start, so the SQL has to ship with the image.
+# The SQL ships with the image so it can be inspected against the build. It is
+# applied as a deploy step, never on container start — see AGENTS.md.
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 
 USER nextjs
