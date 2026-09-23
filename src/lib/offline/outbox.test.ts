@@ -35,6 +35,8 @@ function item(overrides: Partial<StoredItem> = {}): StoredItem {
     discountType: null,
     offerAmount: null,
     offerBundleCents: null,
+    shelfModule: null,
+    shelfLevel: null,
     qty: 1,
     qtyUnit: "kpl",
     note: null,

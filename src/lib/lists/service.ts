@@ -4,6 +4,7 @@ import { listItems, listMembers, lists, shareTokens } from "@/lib/db/schema";
 import { generateShareToken, isValidShareToken, uuidv7 } from "@/lib/ids";
 import { publish } from "@/lib/realtime/bus";
 import { type MergeableItem, mergeItem, sortKeyBetween } from "@/lib/sync/lww";
+import { locateListItems } from "./locate";
 import type { CreateItemInput, CreateListInput, SyncInput, UpdateItemInput } from "./validation";
 
 /**
@@ -48,6 +49,9 @@ export interface ItemView {
   discountType: string | null;
   offerAmount: number | null;
   offerBundleCents: number | null;
+  /** Shelf module and level in the list's store, once located. */
+  shelfModule: string | null;
+  shelfLevel: string | null;
   qty: number;
   qtyUnit: string;
   note: string | null;
@@ -76,7 +80,7 @@ export interface ListView {
 
 type ItemRow = typeof listItems.$inferSelect;
 
-function toItemView(row: ItemRow): ItemView {
+export function toItemView(row: ItemRow): ItemView {
   return {
     id: row.id,
     ean: row.ean,
@@ -92,6 +96,8 @@ function toItemView(row: ItemRow): ItemView {
     discountType: row.discountType,
     offerAmount: row.offerAmount,
     offerBundleCents: row.offerBundleCents,
+    shelfModule: row.shelfModule,
+    shelfLevel: row.shelfLevel,
     qty: toNumber(row.qty),
     qtyUnit: row.qtyUnit,
     note: row.note,
@@ -224,6 +230,10 @@ export async function getList(token: string): Promise<ListView> {
     .where(eq(shareTokens.token, token))
     .catch(() => undefined);
 
+  // Items added before store locations existed, or whose lookup failed, are
+  // filled in in the background and arrive as live updates.
+  if (rows.some((row) => row.ean && !row.locatedAt)) void locateListItems(listId);
+
   return {
     id: list.id,
     name: list.name,
@@ -249,7 +259,7 @@ export async function addItem(token: string, input: CreateItemInput) {
   const { listId } = await authorize(token, "editor");
   const now = new Date();
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(listItems)
@@ -324,6 +334,13 @@ export async function addItem(token: string, input: CreateItemInput) {
     void publish(listId, { type: "item.added", item: view }, input.addedBy ?? null);
     return { item: view, merged: false };
   });
+
+  // After the commit, so the lookup sees the row; not awaited, so adding an
+  // item never waits on K-Ruoka. The result arrives as a live update.
+  if (!result.merged && result.item.ean) {
+    void locateListItems(listId, { itemIds: [result.item.id] });
+  }
+  return result;
 }
 
 /**
@@ -528,6 +545,9 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
       void publish(listId, { type: "item.removed", itemId: edit.id }, input.memberId ?? null);
     }
   }
+
+  // Rows created offline arrive here instead of through addItem.
+  if (views.some((view) => view.ean && !view.shelfModule)) void locateListItems(listId);
 
   return views;
 }

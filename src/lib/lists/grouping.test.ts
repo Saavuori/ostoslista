@@ -20,6 +20,8 @@ function item(overrides: Partial<ItemView> = {}): ItemView {
     discountType: null,
     offerAmount: null,
     offerBundleCents: null,
+    shelfModule: null,
+    shelfLevel: null,
     qty: 1,
     qtyUnit: "kpl",
     note: null,

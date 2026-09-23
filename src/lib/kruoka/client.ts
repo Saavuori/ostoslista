@@ -1,4 +1,5 @@
 import { getBuildNumber, invalidateBuildNumber, rememberBuildNumber } from "./buildNumber";
+import { normalizeLocation, type StoreLocation } from "./location";
 import { normalizeSearchResponse } from "./normalize";
 import { request, type TransportRequest, type TransportResponse } from "./transport";
 import type { Product } from "./types";
@@ -94,17 +95,21 @@ export class KRuokaClient {
    * says ours is stale. A deploy happens mid-session sooner or later, and one
    * retry turns that from an outage into a hiccup.
    */
-  private async call(path: string, retriedAfterVersionBump = false): Promise<unknown> {
+  private async call(
+    path: string,
+    method: "GET" | "POST" = "POST",
+    retriedAfterVersionBump = false,
+  ): Promise<unknown> {
     const build = this.fixedBuildNumber ?? getBuildNumber();
 
     const response = await this.transport(`${BASE_URL}${path}`, {
-      method: "POST",
+      method,
       timeoutMs: this.timeoutMs,
-      body: "{}",
+      ...(method === "POST" ? { body: "{}" } : {}),
       headers: {
         Accept: "application/json",
         "Accept-Language": "fi-FI,fi;q=0.9",
-        "Content-Type": "application/json",
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
         "X-K-Build-Number": build,
       },
     });
@@ -117,7 +122,7 @@ export class KRuokaClient {
         // Without a reported value, fall back to the bootstrap rather than
         // resending the one just refused.
         if (!learned) invalidateBuildNumber();
-        return this.call(path, true);
+        return this.call(path, method, true);
       }
     }
 
@@ -155,6 +160,30 @@ export class KRuokaClient {
     const path = `/v2/product-search/${encodeURIComponent(trimmed)}?${params}`;
     const body = await this.throttle(() => this.call(path));
     return normalizeSearchResponse(body, storeId);
+  }
+
+  /**
+   * Where a product sits in one store: department, shelf and level.
+   *
+   * One request per product, made only for things someone put on a list —
+   * never for search results. Null when the store has no location for it.
+   */
+  async getStoreLocation(
+    ean: string,
+    options: { storeId?: string } = {},
+  ): Promise<StoreLocation | null> {
+    const digits = ean.replace(/\D/g, "");
+    if (digits.length < 8) return null;
+
+    const params = new URLSearchParams({ storeId: options.storeId ?? this.storeId });
+    try {
+      const body = await this.throttle(() => this.call(`/v4/products/${digits}?${params}`, "GET"));
+      return normalizeLocation(body);
+    } catch (error) {
+      // An unknown product is an answer ("no location"), not a failure.
+      if (error instanceof KRuokaError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   /**
