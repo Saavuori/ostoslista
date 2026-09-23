@@ -1,3 +1,4 @@
+import { aisleOrderForSlug, departmentNameForSlug } from "./aisles";
 import type { OfferKind, PriceOffer, Product, ProductPricing, QtyUnit, SoldBy } from "./types";
 
 /**
@@ -125,7 +126,12 @@ export function normalizeProduct(raw: unknown, fallbackStoreId: string): Product
 
   const category = obj(product.category);
   const tree = Array.isArray(category?.tree) ? category.tree : [];
-  const leaf = obj(tree.at(-1));
+  // The top level is the department shopping mode groups by. The leaf
+  // ("Mozzarella") is so fine-grained that nearly every item became its own
+  // group, and `category.order` is a per-leaf index on a different scale from
+  // the aisle order the other sources use.
+  const top = obj(tree[0]);
+  const categoryPath = str(category?.path);
 
   const measurements = obj(attrs?.measurements);
   const soldByRaw = obj(obj(obj(product.mobilescan)?.pricing)?.normal)?.soldBy;
@@ -141,10 +147,10 @@ export function normalizeProduct(raw: unknown, fallbackStoreId: string): Product
     nameSv: str(names?.swedish),
     nameEn: str(names?.english),
     brand: str(obj(product.brand)?.name),
-    categoryPath: str(category?.path),
-    categoryName: str(obj(leaf?.localizedName)?.finnish),
+    categoryPath,
+    categoryName: str(obj(top?.localizedName)?.finnish) ?? departmentNameForSlug(categoryPath),
     section: str(product.section) ?? str(attrs?.section),
-    categoryOrder: num(category?.order),
+    categoryOrder: categoryPath ? aisleOrderForSlug(categoryPath) : null,
     imageUrl: str(images[0]) ?? str(obj(attrs?.image)?.url),
     originCountry: str(obj(attrs?.origin)?.countryOfOrigin),
     contentSize: measurements ? num(measurements.contentSize) : null,

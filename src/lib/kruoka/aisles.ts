@@ -57,6 +57,56 @@ export function aisleOrderForSlug(slug: string | null): number {
   return ORDER_BY_SLUG.get(top) ?? UNKNOWN_ORDER;
 }
 
+/**
+ * Display names of the top-level categories — the departments shopping mode
+ * groups by.
+ *
+ * Every source of product data (live search, product pages, the seed import)
+ * must produce the same heading for the same department, or one department
+ * splits into two groups. The API's own `category.tree[0]` name is preferred;
+ * this table is the fallback when only a slug is known, and is what the
+ * `0005` data migration used.
+ *
+ * Copied verbatim from the API's `tree[0].localizedName.finnish`, 2026-09-23.
+ * The three slugs missing here (kahvilatuotteet, sahko-pienrauta-ja-
+ * autotarvikkeet, autopesu) never appeared in search results.
+ */
+export const DEPARTMENT_NAMES: Readonly<Record<string, string>> = {
+  "hedelmat-ja-vihannekset": "Hedelmät ja vihannekset",
+  "leivat-keksit-ja-leivonnaiset": "Leivät, keksit ja leivonnaiset",
+  "liha-ja-kasviproteiinit": "Liha ja kasviproteiinit",
+  "kala-ja-merenelavat": "Kala ja merenelävät",
+  valmisruoka: "Valmisruoka",
+  "maito-juusto-munat-ja-rasvat": "Maito, juusto, munat ja rasvat",
+  "kuivat-elintarvikkeet-ja-leivonta": "Kuivat elintarvikkeet ja leivonta",
+  "sailykkeet-keitot-ja-ateria-ainekset": "Säilykkeet, keitot ja ateria-ainekset",
+  "oljyt-etikat-ja-salaattikastikkeet": "Öljyt, etikat ja salaattikastikkeet",
+  "mausteet-ja-maustaminen": "Mausteet ja maustaminen",
+  "texmex-ja-maailman-maut": "Texmex ja maailman maut",
+  pakasteet: "Pakasteet",
+  "makeiset-ja-naposteltavat": "Makeiset ja naposteltavat",
+  juomat: "Juomat",
+  lapset: "Lapset",
+  lemmikit: "Lemmikit",
+  "kosmetiikka-terveys-ja-hygienia": "Kosmetiikka, terveys ja hygienia",
+  "keittio-astiat-ja-kattaus": "Keittiö, astiat ja kattaus",
+  "kodinhoito-ja-taloustarvikkeet": "Kodinhoito ja taloustarvikkeet",
+  "kodintekstiilit-ja-sisustus": "Sisustus ja kodintekstiilit",
+  "kodinkoneet-ja-elektroniikka": "Kodinkoneet ja elektroniikka",
+  "kukat-ja-puutarha": "Kukat ja puutarha",
+  "vapaa-aika-ja-urheilu": "Vapaa-aika ja urheilu",
+  "kirjat-lehdet-ja-paperitarvikkeet": "Kirjat, lehdet ja paperitarvikkeet",
+  "kengat-ja-kenkienhoito": "Kengät ja kenkienhoito",
+  "vaatteet-ja-asusteet": "Vaatteet ja asusteet",
+};
+
+/** Department name for a slug or slug path, e.g. "pakasteet/jaatelot" -> "Pakasteet". */
+export function departmentNameForSlug(slug: string | null): string | null {
+  if (!slug) return null;
+  const top = slug.split("/")[0] ?? "";
+  return DEPARTMENT_NAMES[top] ?? null;
+}
+
 /** Extracts the category slug from a K-Ruoka breadcrumb URL. */
 export function slugFromCategoryUrl(url: string | null): string | null {
   if (!url) return null;

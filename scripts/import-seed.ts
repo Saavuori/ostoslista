@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, storePrices } from "@/lib/db/schema";
-import { aisleOrderForSlug } from "@/lib/kruoka/aisles";
+import { aisleOrderForSlug, departmentNameForSlug } from "@/lib/kruoka/aisles";
 import { imageUrlForEan } from "@/lib/kruoka/categoryPage";
 import { foldFinnish } from "@/lib/text";
 
@@ -18,20 +18,6 @@ import { foldFinnish } from "@/lib/text";
  * snapshot is captured by hand and replayed here. The directory is gitignored:
  * the data is Kesko's and this repository is public.
  */
-
-/** Slug -> display name, for the aisle headings. */
-const CATEGORY_NAMES: Record<string, string> = {
-  "hedelmat-ja-vihannekset": "Hedelmät ja vihannekset",
-  "leivat-keksit-ja-leivonnaiset": "Leivät ja leivonnaiset",
-  "liha-ja-kasviproteiinit": "Liha ja kasviproteiinit",
-  "kala-ja-merenelavat": "Kala ja merenelävät",
-  valmisruoka: "Valmisruoka",
-  "maito-juusto-munat-ja-rasvat": "Maito, juusto ja munat",
-  "kuivat-elintarvikkeet-ja-leivonta": "Kuivat elintarvikkeet",
-  pakasteet: "Pakasteet",
-  "makeiset-ja-naposteltavat": "Makeiset ja naposteltavat",
-  juomat: "Juomat",
-};
 
 async function main(): Promise<void> {
   const dir = join(process.cwd(), ".data", "seed");
@@ -51,7 +37,8 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     const slug = file.replace(/\.txt$/, "");
-    const categoryName = CATEGORY_NAMES[slug] ?? slug;
+    // The shared table, so seeded and live items land in the same aisle group.
+    const categoryName = departmentNameForSlug(slug) ?? slug;
     const categoryOrder = aisleOrderForSlug(slug);
 
     const rows = readFileSync(join(dir, file), "utf8")

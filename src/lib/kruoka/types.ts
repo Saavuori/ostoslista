@@ -64,14 +64,17 @@ export interface Product {
   brand: string | null;
   /** Slug path, e.g. "kala-ja-merenelavat/tuorekala/lohi". */
   categoryPath: string | null;
-  /** Human-readable leaf category, e.g. "Lohi". */
+  /**
+   * Top-level department, e.g. "Kala ja merenelävät" — the shopping-mode
+   * heading. Not the leaf ("Lohi"): that splits a list into one group per item.
+   */
   categoryName: string | null;
   /**
    * Store department code (e.g. "1102"). This is the closest thing the data has
    * to a physical aisle, so it drives shopping-mode ordering.
    */
   section: string | null;
-  /** Upstream category ordering — roughly the order you walk the store. */
+  /** Department's position in a walk through the store; see `aisles.ts`. */
   categoryOrder: number | null;
   imageUrl: string | null;
   originCountry: string | null;
