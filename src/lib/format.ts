@@ -17,10 +17,6 @@ export function formatCents(cents: number): string {
   return eurFormatter.format(cents / 100);
 }
 
-export function formatEuros(euros: number): string {
-  return eurFormatter.format(euros);
-}
-
 /**
  * Quantity with its unit: "2 kpl", "0,4 kg".
  *
@@ -32,9 +28,4 @@ export function formatQty(qty: number, unit: string): string {
     maximumFractionDigits: 3,
   }).format(qty);
   return `${formatted} ${unit}`;
-}
-
-/** "n. 1,5 kg" for goods weighed at the till. */
-export function formatApproximate(value: number, unit: string): string {
-  return `n. ${new Intl.NumberFormat("fi-FI", { maximumFractionDigits: 2 }).format(value)} ${unit}`;
 }

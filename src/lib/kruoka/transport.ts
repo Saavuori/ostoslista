@@ -143,13 +143,3 @@ export function parseCurlOutput(stdout: string): TransportResponse | null {
 
   return { body: stdout.slice(0, headersAt), status, headers };
 }
-
-/** True when curl is available, which the whole integration depends on. */
-export async function isAvailable(): Promise<boolean> {
-  try {
-    await run("curl", ["--version"], { timeout: 5_000, windowsHide: true });
-    return true;
-  } catch {
-    return false;
-  }
-}

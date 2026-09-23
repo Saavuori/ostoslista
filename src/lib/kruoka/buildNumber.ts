@@ -43,8 +43,3 @@ export function rememberBuildNumber(headers: Record<string, string> | undefined)
 export function invalidateBuildNumber(): void {
   current = null;
 }
-
-/** Test helper. */
-export function primeBuildNumber(value: string): void {
-  current = value;
-}
