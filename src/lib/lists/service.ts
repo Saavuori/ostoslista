@@ -1,10 +1,16 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { listItems, listMembers, lists, shareTokens } from "@/lib/db/schema";
-import { generateShareToken, isValidShareToken, uuidv7 } from "@/lib/ids";
+import { generateShareToken, isUuid, isValidShareToken, uuidv7 } from "@/lib/ids";
 import { publish } from "@/lib/realtime/bus";
 import { type MergeableItem, mergeItem, sortKeyBetween } from "@/lib/sync/lww";
-import type { CreateItemInput, CreateListInput, SyncInput, UpdateItemInput } from "./validation";
+import type {
+  CreateItemInput,
+  CreateListInput,
+  ItemContent,
+  SyncInput,
+  UpdateItemInput,
+} from "./validation";
 
 /**
  * List and item operations.
@@ -179,6 +185,88 @@ function reconcileClientTime(clientAt: Date, storedAt: Date, now: Date): Date {
   return new Date(Math.min(winning, now.getTime() + 1));
 }
 
+/**
+ * What makes two rows "the same thing" on a list: the product, or the typed
+ * text ignoring case and surrounding space. Prefixed so a free-text line that
+ * happens to be all digits never matches a product's EAN.
+ */
+function itemKey(row: { ean?: string | null; freeText?: string | null }): string | null {
+  if (row.ean) return `ean:${row.ean}`;
+  const text = row.freeText?.trim().toLowerCase();
+  return text ? `text:${text}` : null;
+}
+
+/** The columns a new row takes from what the client sent about it. */
+function contentValues(input: ItemContent) {
+  return {
+    ean: input.ean ?? null,
+    freeText: input.freeText ?? null,
+    nameSnapshot: input.nameSnapshot ?? null,
+    priceCentsSnapshot: input.priceCentsSnapshot ?? null,
+    aisleName: input.aisleName ?? null,
+    aisleOrder: input.aisleOrder ?? null,
+    imageUrl: input.imageUrl ?? null,
+    comparisonCents: input.comparisonCents ?? null,
+    comparisonUnit: input.comparisonUnit ?? null,
+    discountPercent: input.discountPercent ?? null,
+    discountType: input.discountType ?? null,
+    offerAmount: input.offerAmount ?? null,
+    offerBundleCents: input.offerBundleCents ?? null,
+  };
+}
+
+/** An edit to an existing row, from the PATCH endpoint or an offline batch. */
+interface ItemEdit {
+  qty?: number | undefined;
+  qtyUnit?: string | undefined;
+  note?: string | null | undefined;
+  sortKey?: number | undefined;
+  checked?: boolean | undefined;
+  deletedAt?: Date | null | undefined;
+  updatedBy?: string | null | undefined;
+}
+
+/**
+ * Resolves an edit against the stored row, field by field. `at` is the
+ * client's time, already reconciled with the server's clock.
+ */
+function applyEdit(stored: MergeableItem, edit: ItemEdit, at: Date): MergeableItem {
+  const incoming: MergeableItem = {
+    ...stored,
+    ...(edit.qty !== undefined ? { qty: edit.qty } : {}),
+    ...(edit.qtyUnit !== undefined ? { qtyUnit: edit.qtyUnit } : {}),
+    ...(edit.note !== undefined ? { note: edit.note ?? null } : {}),
+    ...(edit.sortKey !== undefined ? { sortKey: edit.sortKey } : {}),
+    ...(edit.checked !== undefined
+      ? {
+          checked: edit.checked,
+          checkedBy: edit.checked ? (edit.updatedBy ?? null) : null,
+          checkedAt: edit.checked ? at : null,
+        }
+      : {}),
+    deletedAt: edit.deletedAt ?? stored.deletedAt,
+    updatedAt: at,
+    updatedBy: edit.updatedBy ?? null,
+  };
+  return mergeItem(stored, incoming).value;
+}
+
+/** The columns written back after a merge. */
+function mergedValues(value: MergeableItem) {
+  return {
+    qty: String(value.qty),
+    qtyUnit: value.qtyUnit,
+    note: value.note,
+    checked: value.checked,
+    checkedBy: value.checkedBy,
+    checkedAt: value.checkedAt,
+    sortKey: String(value.sortKey),
+    deletedAt: value.deletedAt,
+    updatedAt: value.updatedAt,
+    updatedBy: value.updatedBy,
+  };
+}
+
 /** Creates a list plus its first share token, atomically. */
 export async function createList(input: CreateListInput) {
   const listId = input.id ?? uuidv7();
@@ -248,18 +336,16 @@ export async function getList(token: string): Promise<ListView> {
 export async function addItem(token: string, input: CreateItemInput) {
   const { listId } = await authorize(token, "editor");
   const now = new Date();
+  const author = input.addedBy ?? null;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(listItems)
       .where(and(eq(listItems.listId, listId), isNull(listItems.deletedAt)));
 
-    const needle = input.ean
-      ? existing.find((row) => row.ean === input.ean)
-      : existing.find(
-          (row) => row.freeText?.trim().toLowerCase() === input.freeText?.trim().toLowerCase(),
-        );
+    const key = itemKey(input);
+    const needle = existing.find((row) => itemKey(row) === key);
 
     if (needle) {
       const merged = toNumber(needle.qty) + input.qty;
@@ -272,15 +358,13 @@ export async function addItem(token: string, input: CreateItemInput) {
           checkedAt: null,
           checkedBy: null,
           updatedAt: now,
-          updatedBy: input.addedBy ?? null,
+          updatedBy: author,
         })
         .where(eq(listItems.id, needle.id))
         .returning();
 
       await bumpList(tx, listId, now);
-      const view = toItemView(updated!);
-      void publish(listId, { type: "item.updated", item: view }, input.addedBy ?? null);
-      return { item: view, merged: true };
+      return { item: toItemView(updated!), merged: true };
     }
 
     const maxSortKey = existing.reduce(
@@ -295,35 +379,32 @@ export async function addItem(token: string, input: CreateItemInput) {
       .values({
         id: input.id ?? uuidv7(),
         listId,
-        ean: input.ean ?? null,
-        freeText: input.freeText ?? null,
-        nameSnapshot: input.nameSnapshot ?? null,
-        priceCentsSnapshot: input.priceCentsSnapshot ?? null,
-        aisleName: input.aisleName ?? null,
-        aisleOrder: input.aisleOrder ?? null,
-        imageUrl: input.imageUrl ?? null,
-        comparisonCents: input.comparisonCents ?? null,
-        comparisonUnit: input.comparisonUnit ?? null,
-        discountPercent: input.discountPercent ?? null,
-        discountType: input.discountType ?? null,
-        offerAmount: input.offerAmount ?? null,
-        offerBundleCents: input.offerBundleCents ?? null,
+        ...contentValues(input),
         qty: String(input.qty),
         qtyUnit: input.qtyUnit,
         note: input.note ?? null,
         sortKey: String(sortKey),
-        addedBy: input.addedBy ?? null,
-        updatedBy: input.addedBy ?? null,
+        addedBy: author,
+        updatedBy: author,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
 
     await bumpList(tx, listId, now);
-    const view = toItemView(created!);
-    void publish(listId, { type: "item.added", item: view }, input.addedBy ?? null);
-    return { item: view, merged: false };
+    return { item: toItemView(created!), merged: false };
   });
+
+  // Only once committed: a write that rolled back must never reach other
+  // devices, and one that did commit must be readable by the time they refetch.
+  void publish(
+    listId,
+    result.merged
+      ? { type: "item.updated", item: result.item }
+      : { type: "item.added", item: result.item },
+    author,
+  );
+  return result;
 }
 
 /**
@@ -334,9 +415,11 @@ export async function addItem(token: string, input: CreateItemInput) {
  */
 export async function updateItem(token: string, itemId: string, input: UpdateItemInput) {
   const { listId } = await authorize(token, "editor");
+  // Compared against a uuid column: a malformed id is a missing row, not a 500.
+  if (!isUuid(itemId)) throw notFound();
   const now = new Date();
 
-  return db.transaction(async (tx) => {
+  const view = await db.transaction(async (tx) => {
     const [row] = await tx
       .select()
       .from(listItems)
@@ -345,53 +428,28 @@ export async function updateItem(token: string, itemId: string, input: UpdateIte
 
     if (!row) throw notFound();
 
-    const stored = toItemView(row);
+    const stored = toMergeable(toItemView(row));
     const clientTime = reconcileClientTime(input.updatedAt ?? now, stored.updatedAt, now);
-    const incoming: MergeableItem = {
-      ...toMergeable(stored),
-      ...(input.qty !== undefined ? { qty: input.qty } : {}),
-      ...(input.qtyUnit !== undefined ? { qtyUnit: input.qtyUnit } : {}),
-      ...(input.note !== undefined ? { note: input.note ?? null } : {}),
-      ...(input.sortKey !== undefined ? { sortKey: input.sortKey } : {}),
-      ...(input.checked !== undefined
-        ? {
-            checked: input.checked,
-            checkedBy: input.checked ? (input.updatedBy ?? null) : null,
-            checkedAt: input.checked ? clientTime : null,
-          }
-        : {}),
-      updatedAt: clientTime,
-      updatedBy: input.updatedBy ?? null,
-    };
-
-    const { value } = mergeItem(toMergeable(stored), incoming);
+    const value = applyEdit(stored, input, clientTime);
 
     const [updated] = await tx
       .update(listItems)
-      .set({
-        qty: String(value.qty),
-        qtyUnit: value.qtyUnit,
-        note: value.note,
-        checked: value.checked,
-        checkedBy: value.checkedBy,
-        checkedAt: value.checkedAt,
-        sortKey: String(value.sortKey),
-        updatedAt: value.updatedAt,
-        updatedBy: value.updatedBy,
-      })
+      .set(mergedValues(value))
       .where(eq(listItems.id, itemId))
       .returning();
 
     await bumpList(tx, listId, now);
-    const view = toItemView(updated!);
-    void publish(listId, { type: "item.updated", item: view }, input.updatedBy ?? null);
-    return view;
+    return toItemView(updated!);
   });
+
+  void publish(listId, { type: "item.updated", item: view }, input.updatedBy ?? null);
+  return view;
 }
 
 /** Soft-deletes an item. Never a hard delete — see AGENTS.md. */
 export async function deleteItem(token: string, itemId: string, by?: string | null) {
   const { listId } = await authorize(token, "editor");
+  if (!isUuid(itemId)) throw notFound();
   const now = new Date();
 
   const [row] = await db
@@ -402,7 +460,7 @@ export async function deleteItem(token: string, itemId: string, by?: string | nu
 
   if (!row) throw notFound();
   await bumpList(db, listId, now);
-  void publish(listId, { type: "item.removed", itemId: itemId }, by ?? null);
+  void publish(listId, { type: "item.removed", itemId }, by ?? null);
   return toItemView(row);
 }
 
@@ -433,33 +491,27 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
         const isCreation = Boolean(edit.ean || edit.freeText);
         if (!isCreation || edit.deletedAt) continue;
 
+        const madeAt = edit.updatedAt < now ? edit.updatedAt : now;
+        const checked = edit.checked ?? false;
         await tx
           .insert(listItems)
           .values({
             id: edit.id,
             listId,
-            ean: edit.ean ?? null,
-            freeText: edit.freeText ?? null,
-            nameSnapshot: edit.nameSnapshot ?? null,
-            priceCentsSnapshot: edit.priceCentsSnapshot ?? null,
-            aisleName: edit.aisleName ?? null,
-            aisleOrder: edit.aisleOrder ?? null,
-            imageUrl: edit.imageUrl ?? null,
-            comparisonCents: edit.comparisonCents ?? null,
-            comparisonUnit: edit.comparisonUnit ?? null,
-            discountPercent: edit.discountPercent ?? null,
-            discountType: edit.discountType ?? null,
-            offerAmount: edit.offerAmount ?? null,
-            offerBundleCents: edit.offerBundleCents ?? null,
+            ...contentValues(edit),
             qty: String(edit.qty ?? 1),
             qtyUnit: edit.qtyUnit ?? "kpl",
             note: edit.note ?? null,
-            checked: edit.checked ?? false,
+            checked,
+            // Ticked before it ever reached the server: credited like any
+            // other check-off, rather than left anonymous.
+            checkedBy: checked ? (edit.updatedBy ?? null) : null,
+            checkedAt: checked ? madeAt : null,
             sortKey: String(edit.sortKey ?? 0),
             addedBy: edit.updatedBy ?? null,
             updatedBy: edit.updatedBy ?? null,
-            createdAt: edit.updatedAt < now ? edit.updatedAt : now,
-            updatedAt: edit.updatedAt < now ? edit.updatedAt : now,
+            createdAt: madeAt,
+            updatedAt: madeAt,
           })
           // Two devices can flush the same offline row; the second must not
           // fail the whole batch.
@@ -469,42 +521,9 @@ export async function syncItems(token: string, input: SyncInput): Promise<ItemVi
 
       const stored = toMergeable(toItemView(row));
       const clientTime = reconcileClientTime(edit.updatedAt, stored.updatedAt, now);
+      const value = applyEdit(stored, edit, clientTime);
 
-      const incoming: MergeableItem = {
-        ...stored,
-        ...(edit.qty !== undefined ? { qty: edit.qty } : {}),
-        ...(edit.qtyUnit !== undefined ? { qtyUnit: edit.qtyUnit } : {}),
-        ...(edit.note !== undefined ? { note: edit.note ?? null } : {}),
-        ...(edit.sortKey !== undefined ? { sortKey: edit.sortKey } : {}),
-        ...(edit.checked !== undefined
-          ? {
-              checked: edit.checked,
-              checkedBy: edit.checked ? (edit.updatedBy ?? null) : null,
-              checkedAt: edit.checked ? clientTime : null,
-            }
-          : {}),
-        deletedAt: edit.deletedAt ?? stored.deletedAt,
-        updatedAt: clientTime,
-        updatedBy: edit.updatedBy ?? null,
-      };
-
-      const { value } = mergeItem(stored, incoming);
-
-      await tx
-        .update(listItems)
-        .set({
-          qty: String(value.qty),
-          qtyUnit: value.qtyUnit,
-          note: value.note,
-          checked: value.checked,
-          checkedBy: value.checkedBy,
-          checkedAt: value.checkedAt,
-          sortKey: String(value.sortKey),
-          deletedAt: value.deletedAt,
-          updatedAt: value.updatedAt,
-          updatedBy: value.updatedBy,
-        })
-        .where(eq(listItems.id, edit.id));
+      await tx.update(listItems).set(mergedValues(value)).where(eq(listItems.id, edit.id));
     }
 
     await bumpList(tx, listId, now);
@@ -588,16 +607,13 @@ export async function getHistory(token: string, limit = 12): Promise<HistoryEntr
     .where(eq(listItems.listId, listId))
     .orderBy(desc(listItems.updatedAt));
 
-  const live = new Set(
-    rows
-      .filter((row) => !row.deletedAt)
-      .map((row) => row.ean ?? row.freeText?.trim().toLowerCase() ?? ""),
-  );
+  // Keyed the same way `addItem` merges, so "on the list" means the same thing.
+  const live = new Set(rows.filter((row) => !row.deletedAt).map(itemKey));
 
   const seen = new Map<string, HistoryEntry>();
 
   for (const row of rows) {
-    const key = row.ean ?? row.freeText?.trim().toLowerCase() ?? "";
+    const key = itemKey(row);
     if (!key || live.has(key)) continue;
 
     const name = row.nameSnapshot ?? row.freeText;

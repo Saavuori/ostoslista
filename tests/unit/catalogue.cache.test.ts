@@ -160,6 +160,17 @@ describe("searchCatalogue", () => {
     expect(await searchCatalogue("LEIPÄ", { storeId: "N106", client: offline() })).toHaveLength(1);
   });
 
+  // What live search caches must be findable when upstream later goes away.
+  it("finds a product cached from a live search once upstream is down", async () => {
+    stubNetwork();
+    await searchCatalogue("kirjolohi", { storeId: "N106", client: stubClient().client });
+    clearSearchCache();
+
+    const items = await searchCatalogue("saarioinen", { storeId: "N106", client: offline() });
+
+    expect(items.map((item) => item.name)).toContain("Saarioinen kirjolohikeitto 300g");
+  });
+
   it("ignores a query shorter than two characters", async () => {
     await seedProduct("1", "Maito", { priceCents: 99 });
     const calls = stubNetwork();

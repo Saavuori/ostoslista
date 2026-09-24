@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/http";
 import { authorize } from "@/lib/lists/service";
 import {
   type Envelope,
@@ -26,8 +27,14 @@ const HEARTBEAT_MS = 20_000;
 export async function GET(request: Request, { params }: Params) {
   const { token } = await params;
 
-  // Throws 404/403, which Next turns into the right status.
-  const { listId } = await authorize(token);
+  // Not wrapped in `handle()`, because the success path is a raw stream. Left
+  // uncaught, a bad token would reach Next as an unhandled error and a 500.
+  let listId: string;
+  try {
+    ({ listId } = await authorize(token));
+  } catch (error) {
+    return errorResponse(error);
+  }
 
   const encoder = new TextEncoder();
   const lastEventId = Number(request.headers.get("Last-Event-ID") ?? "0");

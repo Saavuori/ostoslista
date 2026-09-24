@@ -206,10 +206,6 @@ export type NewListItem = typeof listItems.$inferInsert;
 export type ShareToken = typeof shareTokens.$inferSelect;
 export type ListMember = typeof listMembers.$inferSelect;
 
-/** Text used in the UI. Kept here so the DB and the client agree. */
-export const ITEM_ROLES = ["editor", "viewer"] as const;
-export type Role = (typeof ITEM_ROLES)[number];
-
 /**
  * Cached product identity.
  *

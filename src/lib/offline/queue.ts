@@ -57,7 +57,11 @@ export interface FlushResult {
   sent: number;
   items: ItemView[] | null;
   abandoned: number;
+  /** The request was attempted and did not succeed — the signal to back off. */
+  failed: boolean;
 }
+
+const NOTHING_SENT: FlushResult = { sent: 0, items: null, abandoned: 0, failed: false };
 
 /**
  * Sends everything queued for a list.
@@ -68,10 +72,10 @@ export interface FlushResult {
  */
 export async function flush(token: string, memberId: string | null): Promise<FlushResult> {
   const db = getDb();
-  if (!db) return { sent: 0, items: null, abandoned: 0 };
+  if (!db) return NOTHING_SENT;
 
   const entries = await db.outbox.where("token").equals(token).sortBy("seq");
-  if (entries.length === 0) return { sent: 0, items: null, abandoned: 0 };
+  if (entries.length === 0) return NOTHING_SENT;
 
   const payload = toSyncPayload(entries, memberId);
 
@@ -107,7 +111,7 @@ export async function flush(token: string, memberId: string | null): Promise<Flu
       return visible;
     });
 
-    return { sent: entries.length, items, abandoned: 0 };
+    return { sent: entries.length, items, abandoned: 0, failed: false };
   } catch {
     let abandoned = 0;
     await db.transaction("rw", db.outbox, async () => {
@@ -123,7 +127,7 @@ export async function flush(token: string, memberId: string | null): Promise<Flu
         }
       }
     });
-    return { sent: 0, items: null, abandoned };
+    return { sent: 0, items: null, abandoned, failed: true };
   }
 }
 
@@ -172,7 +176,10 @@ export function useOfflineSync(
         setAbandoned((count) => count + result.abandoned);
       }
       setPending(await pendingCount(token));
-      if (!result.items && result.sent === 0) setAttempts((n) => n + 1);
+      // Only a real failure backs off. An empty queue used to count too, so
+      // every focus or reconnect with nothing to send lengthened the wait
+      // before the next real change was retried.
+      if (result.failed) setAttempts((n) => n + 1);
     } finally {
       inFlight.current = false;
     }

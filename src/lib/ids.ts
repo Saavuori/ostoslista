@@ -40,6 +40,13 @@ export function uuidv7(now: number = Date.now()): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Whether a string is shaped like a uuid, i.e. safe to compare with a uuid column. */
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 /** Extracts the embedded millisecond timestamp from a UUIDv7. */
 export function uuidv7Time(id: string): number {
   return Number.parseInt(id.replace(/-/g, "").slice(0, 12), 16);

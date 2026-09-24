@@ -100,48 +100,6 @@ export function mergeItem(local: MergeableItem, remote: MergeableItem): MergeRes
 }
 
 /**
- * Merges a batch of remote items into a local set.
- *
- * Items present on only one side are taken as-is; items on both are merged
- * field by field.
- */
-export function mergeItemSets(local: MergeableItem[], remote: MergeableItem[]): MergeableItem[] {
-  const byId = new Map<string, MergeableItem>();
-  for (const item of local) byId.set(item.id, item);
-
-  for (const incoming of remote) {
-    const existing = byId.get(incoming.id);
-    byId.set(incoming.id, existing ? mergeItem(existing, incoming).value : incoming);
-  }
-
-  return [...byId.values()];
-}
-
-/**
- * Finds an existing live line for the same product.
- *
- * Adding a product that is already on the list should bump its quantity rather
- * than create a second line — two "Maito" rows is a bug people notice
- * immediately.
- */
-export function findDuplicate(
-  items: MergeableItem[],
-  candidate: { ean: string | null; freeText: string | null },
-  keyOf: (item: MergeableItem) => { ean: string | null; freeText: string | null },
-): MergeableItem | null {
-  const wantEan = candidate.ean;
-  const wantText = candidate.freeText?.trim().toLowerCase() ?? null;
-
-  for (const item of items) {
-    if (item.deletedAt) continue;
-    const key = keyOf(item);
-    if (wantEan && key.ean === wantEan) return item;
-    if (!wantEan && wantText && key.freeText?.trim().toLowerCase() === wantText) return item;
-  }
-  return null;
-}
-
-/**
  * Sort key placing a new item after `after`.
  *
  * Fractional keys let a device insert between two rows without renumbering the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findDuplicate, type MergeableItem, mergeItem, mergeItemSets, sortKeyBetween } from "./lww";
+import { type MergeableItem, mergeItem, sortKeyBetween } from "./lww";
 
 const ALICE = "11111111-1111-7111-8111-111111111111";
 const BOB = "22222222-2222-7222-8222-222222222222";
@@ -121,72 +121,6 @@ describe("mergeItem", () => {
       });
       expect(mergeItem(checked, checked).value).toEqual(checked);
     });
-  });
-});
-
-describe("mergeItemSets", () => {
-  const A = "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa";
-  const B = "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
-  const C = "cccccccc-cccc-7ccc-8ccc-cccccccccccc";
-
-  it("keeps items that exist on only one side", () => {
-    const merged = mergeItemSets([item({ id: A })], [item({ id: B })]);
-    expect(merged.map((i) => i.id).sort()).toEqual([A, B]);
-  });
-
-  it("merges items present on both sides", () => {
-    const local = [item({ id: A, qty: 1, updatedAt: new Date("2026-09-20T10:00:00Z") })];
-    const remote = [
-      item({ id: A, qty: 7, updatedAt: new Date("2026-09-20T10:05:00Z"), updatedBy: BOB }),
-    ];
-    expect(mergeItemSets(local, remote)[0]?.qty).toBe(7);
-  });
-
-  it("is order-independent for disjoint edits", () => {
-    const local = [item({ id: A }), item({ id: B })];
-    const remote = [item({ id: C })];
-    const ab = mergeItemSets(local, remote)
-      .map((i) => i.id)
-      .sort();
-    const ba = mergeItemSets(remote, local)
-      .map((i) => i.id)
-      .sort();
-    expect(ab).toEqual(ba);
-  });
-
-  it("handles empty sets", () => {
-    expect(mergeItemSets([], [])).toEqual([]);
-    expect(mergeItemSets([item({ id: A })], [])).toHaveLength(1);
-  });
-});
-
-describe("findDuplicate", () => {
-  const keyOf = (i: MergeableItem) =>
-    i as MergeableItem & { ean: string | null; freeText: string | null };
-
-  const withKey = (
-    overrides: Partial<MergeableItem> & { ean?: string | null; freeText?: string | null },
-  ) => ({ ...item(overrides), ean: null, freeText: null, ...overrides }) as MergeableItem;
-
-  it("matches an existing product by ean", () => {
-    const items = [withKey({ id: "a", ean: "6410402025602" })];
-    const found = findDuplicate(items, { ean: "6410402025602", freeText: null }, keyOf);
-    expect(found?.id).toBe("a");
-  });
-
-  it("matches free text case- and whitespace-insensitively", () => {
-    const items = [withKey({ id: "a", freeText: "Maito" })];
-    expect(findDuplicate(items, { ean: null, freeText: "  maito " }, keyOf)?.id).toBe("a");
-  });
-
-  it("ignores deleted rows, so re-adding a removed item creates a new line", () => {
-    const items = [withKey({ id: "a", ean: "123", deletedAt: new Date() })];
-    expect(findDuplicate(items, { ean: "123", freeText: null }, keyOf)).toBeNull();
-  });
-
-  it("returns null when nothing matches", () => {
-    const items = [withKey({ id: "a", ean: "123" })];
-    expect(findDuplicate(items, { ean: "999", freeText: null }, keyOf)).toBeNull();
   });
 });
 

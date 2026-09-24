@@ -20,6 +20,19 @@ const PAGE_CACHE = `ostoslista-pages-${VERSION}`;
 
 const SHELL = ["/", "/manifest.webmanifest"];
 
+/**
+ * Stores a copy of a successful response.
+ *
+ * Only successes: a 404 for a chunk mid-deploy or a 500 page would otherwise
+ * be kept — static assets are served cache-first, so forever — and replayed
+ * in place of the real thing.
+ */
+function remember(cacheName, request, response) {
+  if (!response.ok) return;
+  const copy = response.clone();
+  void caches.open(cacheName).then((cache) => cache.put(request, copy));
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -64,8 +77,7 @@ self.addEventListener("fetch", (event) => {
         (hit) =>
           hit ??
           fetch(request).then((response) => {
-            const copy = response.clone();
-            void caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+            remember(SHELL_CACHE, request, response);
             return response;
           }),
       ),
@@ -79,8 +91,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          void caches.open(PAGE_CACHE).then((cache) => cache.put(request, copy));
+          remember(PAGE_CACHE, request, response);
           return response;
         })
         .catch(async () => {

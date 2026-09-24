@@ -16,7 +16,7 @@ const qty = z
   .max(9999, "Määrä on liian suuri")
   .multipleOf(0.001, "Määrässä voi olla enintään kolme desimaalia");
 
-export const qtyUnitSchema = z.enum(["kpl", "kg", "l"]);
+const qtyUnitSchema = z.enum(["kpl", "kg", "l"]);
 
 /**
  * Ordering key.
@@ -42,39 +42,37 @@ export const createListSchema = z.object({
   nickname: z.string().trim().min(1).max(40).optional(),
 });
 
-export const updateListSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  storeId: z
+/**
+ * What a row is and what the search result showed about it. Sent when a row is
+ * created — online through `createItemSchema`, or offline through the sync
+ * batch — so both paths validate it identically.
+ */
+const itemContentSchema = z.object({
+  ean: z
     .string()
-    .trim()
-    .regex(/^[A-Z0-9]{2,16}$/)
-    .optional(),
-  archived: z.boolean().optional(),
+    .regex(/^\d{8,14}$/, "Virheellinen EAN-koodi")
+    .nullish(),
+  freeText: z.string().trim().min(1).max(200).nullish(),
+  nameSnapshot: z.string().trim().min(1).max(200).nullish(),
+  priceCentsSnapshot: z.number().int().min(0).max(10_000_000).nullish(),
+  aisleName: z.string().trim().min(1).max(120).nullish(),
+  aisleOrder: z.number().int().min(0).max(100_000).nullish(),
+  imageUrl: z.string().url().max(400).nullish(),
+  comparisonCents: z.number().int().min(0).max(10_000_000).nullish(),
+  comparisonUnit: z.string().trim().max(8).nullish(),
+  discountPercent: z.number().int().min(0).max(100).nullish(),
+  discountType: z.string().trim().max(24).nullish(),
+  offerAmount: z.number().int().min(1).max(99).nullish(),
+  offerBundleCents: z.number().int().min(0).max(10_000_000).nullish(),
 });
 
 /**
  * An item is either a catalogue product or free text, never both and never
  * neither — enforced here so the rest of the code can rely on it.
  */
-export const createItemSchema = z
-  .object({
+export const createItemSchema = itemContentSchema
+  .extend({
     id: uuid.optional(),
-    ean: z
-      .string()
-      .regex(/^\d{8,14}$/, "Virheellinen EAN-koodi")
-      .nullish(),
-    freeText: z.string().trim().min(1).max(200).nullish(),
-    nameSnapshot: z.string().trim().min(1).max(200).nullish(),
-    priceCentsSnapshot: z.number().int().min(0).max(10_000_000).nullish(),
-    aisleName: z.string().trim().min(1).max(120).nullish(),
-    aisleOrder: z.number().int().min(0).max(100_000).nullish(),
-    imageUrl: z.string().url().max(400).nullish(),
-    comparisonCents: z.number().int().min(0).max(10_000_000).nullish(),
-    comparisonUnit: z.string().trim().max(8).nullish(),
-    discountPercent: z.number().int().min(0).max(100).nullish(),
-    discountType: z.string().trim().max(24).nullish(),
-    offerAmount: z.number().int().min(1).max(99).nullish(),
-    offerBundleCents: z.number().int().min(0).max(10_000_000).nullish(),
     qty: qty.default(1),
     qtyUnit: qtyUnitSchema.default("kpl"),
     note: z.string().trim().max(200).nullish(),
@@ -111,25 +109,9 @@ export const syncSchema = z.object({
   memberId: uuid.nullish(),
   items: z
     .array(
-      z.object({
+      // Content fields are present only on rows created offline.
+      itemContentSchema.extend({
         id: uuid,
-        // Present only on rows created offline.
-        ean: z
-          .string()
-          .regex(/^\d{8,14}$/)
-          .nullish(),
-        freeText: z.string().trim().min(1).max(200).nullish(),
-        nameSnapshot: z.string().trim().min(1).max(200).nullish(),
-        priceCentsSnapshot: z.number().int().min(0).max(10_000_000).nullish(),
-        aisleName: z.string().trim().min(1).max(120).nullish(),
-        aisleOrder: z.number().int().min(0).max(100_000).nullish(),
-        imageUrl: z.string().url().max(400).nullish(),
-        comparisonCents: z.number().int().min(0).max(10_000_000).nullish(),
-        comparisonUnit: z.string().trim().max(8).nullish(),
-        discountPercent: z.number().int().min(0).max(100).nullish(),
-        discountType: z.string().trim().max(24).nullish(),
-        offerAmount: z.number().int().min(1).max(99).nullish(),
-        offerBundleCents: z.number().int().min(0).max(10_000_000).nullish(),
         qty: qty.optional(),
         qtyUnit: qtyUnitSchema.optional(),
         note: z.string().trim().max(200).nullish(),
@@ -144,7 +126,7 @@ export const syncSchema = z.object({
 });
 
 export type CreateListInput = z.infer<typeof createListSchema>;
-export type UpdateListInput = z.infer<typeof updateListSchema>;
+export type ItemContent = z.infer<typeof itemContentSchema>;
 export type CreateItemInput = z.infer<typeof createItemSchema>;
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 export type SyncInput = z.infer<typeof syncSchema>;

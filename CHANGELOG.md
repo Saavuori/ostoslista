@@ -35,6 +35,29 @@ must be green before the next phase begins.
 - `DELETE …/items/:id?by=` rejects a malformed member id with a 400 instead of
   a database error.
 - Removed `ld.json`, a stray Kesko product record committed by accident.
+- **The live stream answered a bad link with a 500.** `/events` sits outside
+  the shared error handler, so a wrong, revoked or expired token surfaced as
+  an unhandled server error. It now gets the same 404 as every other route.
+- `PATCH` / `DELETE …/items/:id` answer a malformed item id with a 404 rather
+  than a database error and a 500.
+- **Search fell back to an index that could not find what search had
+  cached.** Products stored from a live search had no folded `searchName`, so
+  once upstream was unreachable they only matched by case-sensitive name —
+  "saarioinen" missed "Saarioinen …". The sitemap import also only lowercased
+  names instead of folding them the way queries are.
+- A row created *and* ticked offline arrived without `checkedBy` / `checkedAt`.
+  It is now credited like any other check-off.
+- Live updates for an add or an edit were published before the transaction
+  committed, so a write that rolled back could still reach other devices.
+- The service worker cached error responses. A 404 for a build chunk
+  mid-deploy was then served cache-first until the cache version changed;
+  only successful responses are kept now.
+- The offline queue backed off after every flush, including ones with nothing
+  to send, so each focus or reconnect lengthened the wait before a real
+  failed change was retried. Only real failures count now.
+- `npm run db:migrate` on PGlite reported every failure — including a broken
+  migration — as "stop `npm run dev`". Only a failure to open the database
+  says that now.
 
 ### List rows carry what the search result showed
 
