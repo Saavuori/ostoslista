@@ -59,6 +59,25 @@ must be green before the next phase begins.
   migration — as "stop `npm run dev`". Only a failure to open the database
   says that now.
 
+### Item details
+
+On a phone a list row has room for about two lines of name, and grocery
+variants differ at the end of the name — "Valio kevytmaito 2,5 dl
+laktoositon UHT" and "… 1 l laktoositon UHT" clamp to the same thing.
+
+#### Added
+- A details sheet per row, opened from the `⋯` button: the full name, a
+  picture large enough to match against a shelf, quantity, unit price, line
+  total, comparison price, offer (marked when it needs Plussa), department and
+  EAN. Built from the item's snapshot, so it opens offline. Read-only viewers
+  can open it too.
+
+#### Changed
+- Removing a line moved into the details sheet ("Poista listalta"), replacing
+  the `×` on the row. A stray thumb on the row's edge can no longer remove a
+  line mid-shop.
+- Search suggestions show two lines of name instead of one.
+
 ### List rows carry what the search result showed
 
 Previously a product went into the list as a name and a price, and everything

@@ -16,6 +16,12 @@ async function createList(page: import("@playwright/test").Page, name: string) {
   return page.url();
 }
 
+/** Removing is a second step inside the details sheet, not a tap on the row. */
+async function removeItem(page: import("@playwright/test").Page, name: string) {
+  await page.getByRole("button", { name: `Tiedot: ${name}` }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Poista listalta" }).click();
+}
+
 test.describe("making a list", () => {
   test("creates a list and lands on it", async ({ page }) => {
     await createList(page, "Viikon ostokset");
@@ -116,9 +122,27 @@ test.describe("items", () => {
     await input.press("Enter");
     await expect(page.getByText("Maitoa")).toBeVisible();
 
-    await page.getByRole("button", { name: "Poista Maitoa" }).click();
+    await removeItem(page, "Maitoa");
 
     await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
+  });
+
+  test("shows an item's full details without checking it off", async ({ page }) => {
+    await createList(page, "Kauppa");
+    const name = "Pirkka luomu kevytmaito laktoositon 1 l, pitkään säilyvä";
+    const input = page.getByLabel("Lisää tuote");
+    await input.fill(name);
+    await input.press("Enter");
+
+    await page.getByRole("button", { name: `Tiedot: ${name}` }).click();
+    const sheet = page.getByRole("dialog", { name });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("heading", { name })).toBeVisible();
+    await expect(sheet).toContainText("1 kpl");
+
+    await sheet.getByRole("button", { name: "Sulje" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(page.getByText("1 jäljellä · 0 valmiina")).toBeVisible();
   });
 
   test("bumps the quantity instead of adding a duplicate row", async ({ page }) => {
@@ -204,7 +228,7 @@ test.describe("sharing", () => {
     await expect(page.getByText("Korissa · 1")).toBeVisible({ timeout: 15_000 });
 
     // Removal too.
-    await otherPage.getByRole("button", { name: "Poista Maitoa" }).click();
+    await removeItem(otherPage, "Maitoa");
     await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible({ timeout: 15_000 });
 
     await otherContext.close();
@@ -293,7 +317,7 @@ test.describe("offline", () => {
     await expect(page.getByText("Maitoa")).toBeVisible();
 
     await context.setOffline(true);
-    await page.getByRole("button", { name: "Poista Maitoa" }).click();
+    await removeItem(page, "Maitoa");
     await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
 
     // Assert it was actually queued first: otherwise the drain check below
@@ -320,7 +344,7 @@ test.describe("history", () => {
     await input.press("Enter");
     await expect(page.getByText("Kahvia")).toBeVisible();
 
-    await page.getByRole("button", { name: "Poista Kahvia" }).click();
+    await removeItem(page, "Kahvia");
     await expect(page.getByText("Aloita listan täyttäminen")).toBeVisible();
 
     const chip = page.getByRole("button", { name: "Kahvia", exact: true });
