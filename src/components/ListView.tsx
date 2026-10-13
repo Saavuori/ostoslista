@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import { AddItemBar } from "@/components/AddItemBar";
 import { HistoryChips } from "@/components/HistoryChips";
+import { ItemDetails } from "@/components/ItemDetails";
 import { ItemRow } from "@/components/ItemRow";
 import { ShareButton } from "@/components/ShareButton";
 import type { CatalogueItem } from "@/lib/catalogue/cache";
@@ -48,6 +49,8 @@ export function ListView({ list, shareUrl }: Props) {
   /** Transient confirmation, e.g. when an add merged into an existing line. */
   const [notice, setNotice] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  /** The line whose details sheet is open, by id so live edits show in it. */
+  const [detailsId, setDetailsId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -368,6 +371,14 @@ export function ListView({ list, shareUrl }: Props) {
     });
   }
 
+  function showDetails(item: ItemView) {
+    setDetailsId(item.id);
+  }
+
+  // Looked up rather than captured, so a change from someone else shows in an
+  // open sheet, and a line they remove closes it instead of lingering.
+  const detailsItem = detailsId ? optimisticItems.find((i) => i.id === detailsId) : undefined;
+
   // Reserve the picture column only when the list actually has pictures.
   const showImages = optimisticItems.some((i) => i.imageUrl);
   const canGroup = isGroupingUseful(pending);
@@ -432,7 +443,7 @@ export function ListView({ list, shareUrl }: Props) {
                             key={item.id}
                             item={item}
                             onToggle={toggle}
-                            onRemove={remove}
+                            onShowDetails={showDetails}
                             disabled={readOnly}
                             showImages={showImages}
                           />
@@ -448,7 +459,7 @@ export function ListView({ list, shareUrl }: Props) {
                       key={item.id}
                       item={item}
                       onToggle={toggle}
-                      onRemove={remove}
+                      onShowDetails={showDetails}
                       disabled={readOnly}
                       showImages={showImages}
                     />
@@ -466,7 +477,7 @@ export function ListView({ list, shareUrl }: Props) {
                       key={item.id}
                       item={item}
                       onToggle={toggle}
-                      onRemove={remove}
+                      onShowDetails={showDetails}
                       disabled={readOnly}
                       showImages={showImages}
                     />
@@ -526,6 +537,16 @@ export function ListView({ list, shareUrl }: Props) {
           </>
         )}
       </footer>
+
+      {detailsItem ? (
+        <ItemDetails
+          key={detailsItem.id}
+          item={detailsItem}
+          onClose={() => setDetailsId(null)}
+          onRemove={remove}
+          readOnly={readOnly}
+        />
+      ) : null}
     </div>
   );
 }

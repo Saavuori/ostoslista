@@ -9,7 +9,8 @@ import { lineTotalCents } from "@/lib/lists/totals";
 interface Props {
   item: ItemView;
   onToggle: (item: ItemView) => void;
-  onRemove: (item: ItemView) => void;
+  onShowDetails: (item: ItemView) => void;
+  /** Stops toggling. Details stay available: a viewer may need them too. */
   disabled?: boolean;
   /**
    * Whether to reserve the picture column.
@@ -30,21 +31,14 @@ interface Props {
  * and the offer is what tells you to pick up two instead of one.
  *
  * The whole row is the toggle target rather than just the checkbox: this gets
- * tapped one-handed while holding a basket. The remove control is a separate,
- * deliberately smaller target so it is hard to hit by accident but still
- * reachable without a gesture nobody would discover.
+ * tapped one-handed while holding a basket. The trailing control opens the
+ * details sheet, which has the full name and the remove action — so removing
+ * takes a deliberate second tap and a stray thumb cannot lose a line.
  */
-export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Props) {
+export function ItemRow({ item, onToggle, onShowDetails, disabled, showImages }: Props) {
   const label = item.nameSnapshot ?? item.freeText ?? "Nimetön tuote";
   const lineCents = item.priceCentsSnapshot ? lineTotalCents(item) : null;
-
-  // "2 kpl 4,50 €" is more actionable than a percentage: it says what to do.
-  const offer =
-    item.offerAmount && item.offerAmount > 1 && item.offerBundleCents
-      ? `${item.offerAmount} kpl ${formatCents(item.offerBundleCents)}`
-      : item.discountPercent
-        ? `−${item.discountPercent} %`
-        : null;
+  const offer = offerLabel(item);
 
   return (
     <li className="@container flex items-stretch border-b border-rule last:border-b-0">
@@ -147,20 +141,25 @@ export function ItemRow({ item, onToggle, onRemove, disabled, showImages }: Prop
 
       <button
         type="button"
-        onClick={() => onRemove(item)}
-        disabled={disabled}
-        aria-label={`Poista ${label}`}
-        className="flex w-11 shrink-0 items-center justify-center text-ink-faint transition-colors active:text-signal disabled:opacity-50"
+        onClick={() => onShowDetails(item)}
+        aria-label={`Tiedot: ${label}`}
+        aria-haspopup="dialog"
+        className="flex w-11 shrink-0 items-center justify-center text-ink-faint transition-colors active:bg-sunk active:text-ink"
       >
-        <svg viewBox="0 0 20 20" className="size-4" fill="none" aria-hidden="true">
-          <path
-            d="M5 5l10 10M15 5L5 15"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-          />
+        <svg viewBox="0 0 20 20" className="size-5" fill="currentColor" aria-hidden="true">
+          <circle cx="4.5" cy="10" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="15.5" cy="10" r="1.6" />
         </svg>
       </button>
     </li>
   );
+}
+
+/** "2 kpl 4,50 €" is more actionable than a percentage: it says what to do. */
+export function offerLabel(item: ItemView): string | null {
+  if (item.offerAmount && item.offerAmount > 1 && item.offerBundleCents) {
+    return `${item.offerAmount} kpl ${formatCents(item.offerBundleCents)}`;
+  }
+  return item.discountPercent ? `−${item.discountPercent} %` : null;
 }
