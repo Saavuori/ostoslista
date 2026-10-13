@@ -124,7 +124,12 @@ export function AddItemBar({ storeId, onAddProduct, onAddFreeText }: Props) {
                 )}
 
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm leading-snug text-ink">{item.name}</span>
+                  {/*
+                    Two lines, not one: the variants of a product differ at the
+                    end of the name ("… 2,5 dl laktoositon UHT"), exactly where
+                    a single-line truncation cuts.
+                  */}
+                  <span className="line-clamp-2 text-sm leading-snug text-ink">{item.name}</span>
                   <span className="tabular mt-0.5 block text-xs text-ink-faint">
                     {item.comparisonCents
                       ? `${formatCents(item.comparisonCents)}/${item.comparisonUnit}`
